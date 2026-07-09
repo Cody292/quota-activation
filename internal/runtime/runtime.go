@@ -161,5 +161,5 @@ func configFields() []ConfigField {
 }
 
 func localizedDescription(chinese string, english string) string {
-	return "中文：" + chinese + "\nEnglish: " + english
+	return chinese + "\n" + english
 }
