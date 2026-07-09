@@ -1,0 +1,113 @@
+package detector
+
+import (
+	"errors"
+	"time"
+)
+
+var (
+	// ErrMalformedQuota 表示 quota payload 不是合法 JSON。
+	ErrMalformedQuota = errors.New("quota payload 畸形")
+	// ErrUnknownQuota 表示 quota payload 缺少可安全激活的周期证据。
+	ErrUnknownQuota = errors.New("quota 周期未知")
+)
+
+// Provider 标识 quota 输入来自的上游能力域。
+type Provider string
+
+const (
+	// ProviderUnknown 表示未识别 provider，必须保持 unknown 且不得自动激活。
+	ProviderUnknown Provider = "unknown"
+	// ProviderCodex 表示 Codex/wham usage quota 输入。
+	ProviderCodex Provider = "codex"
+	// ProviderAntigravity 表示 Antigravity quota summary 输入。
+	ProviderAntigravity Provider = "antigravity"
+)
+
+// Window 标识本次 quota 证据所属计量窗口。
+type Window string
+
+const (
+	// WindowUnknown 表示无法识别计量窗口。
+	WindowUnknown Window = "unknown"
+	// WindowFiveHour 表示短周期 5 小时计量窗口。
+	WindowFiveHour Window = "5h"
+	// WindowWeekly 表示周计量窗口。
+	WindowWeekly Window = "weekly"
+)
+
+// ModelGroup 标识 Antigravity 独立计量的模型组。
+type ModelGroup string
+
+const (
+	// ModelGroupNone 表示 provider 没有独立模型组维度。
+	ModelGroupNone ModelGroup = ""
+	// ModelGroupGemini 表示 Antigravity Gemini 模型组。
+	ModelGroupGemini ModelGroup = "gemini"
+	// ModelGroupClaudeGPT 表示 Antigravity Claude/GPT 模型组。
+	ModelGroupClaudeGPT ModelGroup = "claude_gpt"
+)
+
+// Status 标识 detector 对本次 quota 观察的可用性结论。
+type Status string
+
+const (
+	// StatusUnknown 表示没有得到可信 reset_at，必须保持不激活。
+	StatusUnknown Status = "unknown"
+	// StatusReady 表示已得到可用于周期去重的 reset_at。
+	StatusReady Status = "ready"
+)
+
+// CycleKey 是按凭证、provider、窗口与 reset_at 去重的周期标识。
+type CycleKey string
+
+// String 返回周期键的稳定字符串表示。
+func (k CycleKey) String() string {
+	return string(k)
+}
+
+// ProbeInput 是 detector 解析 quota payload 所需的最小输入。
+type ProbeInput struct {
+	AuthID     string
+	Provider   Provider
+	Model      string
+	ObservedAt time.Time
+	Payload    []byte
+}
+
+// ProbeObservation 是从 quota payload 中解析出的脱敏周期证据。
+type ProbeObservation struct {
+	Provider   Provider
+	ModelGroup ModelGroup
+	Window     Window
+	ResetAt    time.Time
+}
+
+// Decision 是一次周期判定的安全输出。
+type Decision struct {
+	Status      Status
+	Activate    bool
+	CycleKey    CycleKey
+	Observation ProbeObservation
+	Reason      string
+}
+
+type quotaWindow struct {
+	ResetAt            any `json:"reset_at"`
+	ResetAfterSeconds  any `json:"reset_after_seconds"`
+	LimitWindowSeconds any `json:"limit_window_seconds"`
+	Name               any `json:"name"`
+	Type               any `json:"type"`
+	Category           any `json:"category"`
+	Label              any `json:"label"`
+	Bucket             any `json:"bucket"`
+	Scope              any `json:"scope"`
+	ResetTime          any `json:"resetTime"`
+}
+
+type parsedCycle struct {
+	provider   Provider
+	modelGroup ModelGroup
+	window     Window
+	resetAt    time.Time
+}
