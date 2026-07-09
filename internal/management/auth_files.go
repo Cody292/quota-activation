@@ -17,6 +17,7 @@ type authFilesResponse struct {
 
 type authFileChoice struct {
 	AuthID       string        `json:"auth_id"`
+	Label        string        `json:"label"`
 	Provider     string        `json:"provider"`
 	Disabled     bool          `json:"disabled"`
 	Models       []modelChoice `json:"models"`
@@ -34,6 +35,8 @@ type authFileDocument struct {
 	AuthIDUpper string `json:"authID"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
+	Account     string `json:"account"`
+	Email       string `json:"email"`
 	Provider    string `json:"provider"`
 	Type        string `json:"type"`
 	Disabled    bool   `json:"disabled"`
@@ -62,11 +65,12 @@ func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) 
 func (h *Handler) authFileChoice(file host.AuthFile) (authFileChoice, bool) {
 	document := decodeAuthFile(file)
 	authID := firstNonBlank(file.AuthIndex, document.AuthID, document.AuthIDUpper, document.ID, document.Name, file.Name)
+	label := firstNonBlank(file.Account, file.Email, document.Account, document.Email, document.Name, file.Name, authID)
 	provider := normalizeProvider(firstNonBlank(file.Provider, file.Type, document.Provider, document.Type))
 	if authID == "" || provider == "" {
 		return authFileChoice{}, false
 	}
-	return authFileChoice{AuthID: authID, Provider: provider, Disabled: file.Disabled || document.Disabled, Models: h.modelChoices(provider), QuotaPayload: h.quotaPayload(provider)}, true
+	return authFileChoice{AuthID: authID, Label: label, Provider: provider, Disabled: file.Disabled || document.Disabled, Models: h.modelChoices(provider), QuotaPayload: h.quotaPayload(provider)}, true
 }
 
 func decodeAuthFile(file host.AuthFile) authFileDocument {

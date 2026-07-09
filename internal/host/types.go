@@ -34,6 +34,8 @@ type ModelExecuteResponse struct {
 type AuthFile struct {
 	Name      string `json:"name"`
 	AuthIndex string `json:"auth_index"`
+	Account   string `json:"account,omitempty"`
+	Email     string `json:"email,omitempty"`
 	Provider  string `json:"provider,omitempty"`
 	Type      string `json:"type,omitempty"`
 	Disabled  bool   `json:"disabled"`
