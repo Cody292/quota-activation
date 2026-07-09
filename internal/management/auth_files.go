@@ -61,12 +61,12 @@ func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) 
 
 func (h *Handler) authFileChoice(file host.AuthFile) (authFileChoice, bool) {
 	document := decodeAuthFile(file)
-	authID := firstNonBlank(document.AuthID, document.AuthIDUpper, document.ID, document.Name, file.Name)
-	provider := normalizeProvider(firstNonBlank(document.Provider, document.Type))
+	authID := firstNonBlank(file.AuthIndex, document.AuthID, document.AuthIDUpper, document.ID, document.Name, file.Name)
+	provider := normalizeProvider(firstNonBlank(file.Provider, file.Type, document.Provider, document.Type))
 	if authID == "" || provider == "" {
 		return authFileChoice{}, false
 	}
-	return authFileChoice{AuthID: authID, Provider: provider, Disabled: document.Disabled, Models: h.modelChoices(provider), QuotaPayload: h.quotaPayload(provider)}, true
+	return authFileChoice{AuthID: authID, Provider: provider, Disabled: file.Disabled || document.Disabled, Models: h.modelChoices(provider), QuotaPayload: h.quotaPayload(provider)}, true
 }
 
 func decodeAuthFile(file host.AuthFile) authFileDocument {

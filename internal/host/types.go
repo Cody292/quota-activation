@@ -30,10 +30,14 @@ type ModelExecuteResponse struct {
 	Body       []byte
 }
 
-// AuthFile 表示宿主凭证存储中的一个原始凭证文档。
+// AuthFile 表示宿主凭证存储中的一个凭证元数据或原始凭证文档。
 type AuthFile struct {
-	Name string
-	Data []byte
+	Name      string `json:"name"`
+	AuthIndex string `json:"auth_index"`
+	Provider  string `json:"provider,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Disabled  bool   `json:"disabled"`
+	Data      []byte `json:"data,omitempty"`
 }
 
 // HTTPStatusError 暴露 HTTP 状态码，但不包含请求体或响应体。
