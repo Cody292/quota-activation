@@ -3,6 +3,7 @@
 *.a
 *.o
 *.test
+*_test.go
 *.out
 
 bin/
