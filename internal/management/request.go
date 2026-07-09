@@ -67,7 +67,7 @@ func (r activationRequest) toActivatorRequest(cfg config.Config, observedAt time
 		Model:      model,
 		ObservedAt: observedAt,
 		Payload:    r.QuotaPayload,
-	}, r.PreviousCycleKey)
+	}, "")
 	if err != nil {
 		return activator.Request{}, fmt.Errorf("evaluate quota: %w", err)
 	}
