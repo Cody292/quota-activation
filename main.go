@@ -171,7 +171,7 @@ func (hostCallbackAdapter) ListAuthFiles(ctx context.Context) ([]host.AuthFile, 
 	var response struct {
 		Files []host.AuthFile `json:"files"`
 	}
-	if err := callHost(ctx, "host.auth.list", map[string]string{}, &response); err != nil {
+	if err := callHost(ctx, "host.auth.list", map[string]any{}, &response); err != nil {
 		return nil, err
 	}
 	return response.Files, nil
