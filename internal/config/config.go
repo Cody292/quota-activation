@@ -81,10 +81,7 @@ func Default() Config {
 		StatePath:                "quota-activation/state.json",
 		EnableBeforeActivation:   false,
 		ActivationModels: ActivationModels{
-			Codex: "gpt-5.4-mini",
 			Antigravity: AntigravityActivationModels{
-				Gemini:          "gemini-3-flash",
-				ClaudeGPT:       "claude-sonnet-4-6",
 				EnableGemini:    true,
 				EnableClaudeGPT: true,
 			},
@@ -186,17 +183,8 @@ func (raw *rawActivationModels) parse(base ActivationModels) (ActivationModels, 
 	if raw != nil && raw.Codex != nil {
 		models.Codex = strings.TrimSpace(*raw.Codex)
 	}
-	if models.Codex == "" {
-		return ActivationModels{}, missingModel("activation_models.codex")
-	}
 	if raw != nil && raw.Antigravity != nil {
 		models.Antigravity = raw.Antigravity.parse(models.Antigravity)
-	}
-	if models.Antigravity.Gemini == "" {
-		return ActivationModels{}, missingModel("activation_models.antigravity.gemini")
-	}
-	if models.Antigravity.ClaudeGPT == "" {
-		return ActivationModels{}, missingModel("activation_models.antigravity.claude_gpt")
 	}
 	return models, nil
 }
@@ -224,10 +212,6 @@ func parseDuration(field string, raw string) (time.Duration, error) {
 		return 0, invalid(field, "必须是 time.ParseDuration 可解析的字符串")
 	}
 	return parsed, nil
-}
-
-func missingModel(field string) error {
-	return invalid(field, "缺少必填唤醒模型配置")
 }
 
 func invalid(field string, reason string) error {

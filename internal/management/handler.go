@@ -111,6 +111,8 @@ func statusForActivationError(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, host.ErrModelExecuteStatus):
 		return http.StatusBadGateway
+	case errors.Is(err, activator.ErrNetworkFailure), activator.IsNetworkFailure(err):
+		return http.StatusBadGateway
 	case errors.Is(err, activator.ErrInvalidRequest):
 		return http.StatusBadRequest
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

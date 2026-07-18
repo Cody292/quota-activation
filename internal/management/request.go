@@ -60,7 +60,7 @@ func (r activationRequest) toActivatorRequest(cfg config.Config, observedAt time
 	if err := ensureModelGroupEnabled(cfg, modelGroup); err != nil {
 		return activator.Request{}, err
 	}
-	model := modelForProvider(cfg, provider, modelGroup, r.Model)
+	model := strings.TrimSpace(r.Model)
 	decision, err := detector.Evaluate(detector.ProbeInput{
 		AuthID:     r.AuthID,
 		Provider:   provider,
@@ -139,30 +139,5 @@ func parseModelGroup(provider detector.Provider, raw string, requestedModel stri
 		return detector.ModelGroupNone, fmt.Errorf("model_group is required for antigravity when model is empty")
 	default:
 		return detector.ModelGroupNone, fmt.Errorf("model_group is unsupported")
-	}
-}
-
-func modelForProvider(cfg config.Config, provider detector.Provider, modelGroup detector.ModelGroup, requested string) string {
-	if strings.TrimSpace(requested) != "" {
-		return strings.TrimSpace(requested)
-	}
-	switch provider {
-	case detector.ProviderCodex:
-		return strings.TrimSpace(cfg.ActivationModels.Codex)
-	case detector.ProviderAntigravity:
-		switch modelGroup {
-		case detector.ModelGroupGemini:
-			return strings.TrimSpace(cfg.ActivationModels.Antigravity.Gemini)
-		case detector.ModelGroupClaudeGPT:
-			return strings.TrimSpace(cfg.ActivationModels.Antigravity.ClaudeGPT)
-		case detector.ModelGroupNone:
-			return ""
-		default:
-			return ""
-		}
-	case detector.ProviderUnknown:
-		return ""
-	default:
-		return ""
 	}
 }

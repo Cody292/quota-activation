@@ -15,9 +15,6 @@ func (a *Activator) normalizeRequest(request Request) (Request, error) {
 	if normalized.Prompt == "" {
 		normalized.Prompt = strings.TrimSpace(a.config.ActivationPrompt)
 	}
-	if normalized.Model == "" {
-		normalized.Model = a.modelForProvider(request.Provider, request.ModelGroup)
-	}
 	missing := missingRequestFields(normalized)
 	if len(missing) > 0 {
 		return normalized, fmt.Errorf("missing %s: %w", strings.Join(missing, ","), ErrInvalidRequest)
@@ -30,9 +27,6 @@ func missingRequestFields(request Request) []string {
 	if request.AuthID == "" {
 		missing = append(missing, "auth_id")
 	}
-	if request.Model == "" {
-		missing = append(missing, "model")
-	}
 	if strings.TrimSpace(request.CycleKey.String()) == "" {
 		missing = append(missing, "cycle_key")
 	}
@@ -43,28 +37,6 @@ func missingRequestFields(request Request) []string {
 		missing = append(missing, "window")
 	}
 	return missing
-}
-
-func (a *Activator) modelForProvider(provider detector.Provider, modelGroup detector.ModelGroup) string {
-	switch provider {
-	case detector.ProviderCodex:
-		return strings.TrimSpace(a.config.ActivationModels.Codex)
-	case detector.ProviderAntigravity:
-		switch modelGroup {
-		case detector.ModelGroupGemini:
-			return strings.TrimSpace(a.config.ActivationModels.Antigravity.Gemini)
-		case detector.ModelGroupClaudeGPT:
-			return strings.TrimSpace(a.config.ActivationModels.Antigravity.ClaudeGPT)
-		case detector.ModelGroupNone:
-			return ""
-		default:
-			return ""
-		}
-	case detector.ProviderUnknown:
-		return ""
-	default:
-		return ""
-	}
 }
 
 func (a *Activator) initialResult(request Request) Result {

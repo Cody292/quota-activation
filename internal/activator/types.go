@@ -14,13 +14,14 @@ import (
 var (
 	// ErrBusy 表示已有激活流程正在执行，本次请求不会并发进入宿主调用。
 	ErrBusy = errors.New("activator: busy")
-	// ErrDisabledCredential 表示目标凭证处于禁用状态且配置不允许临时启用。
+	// ErrDisabledCredential 历史兼容错误：禁用凭证不再因此阻断手动/统一唤醒。
+	// 管理层仍可能匹配该错误码，但 Activate 路径不再返回它。
 	ErrDisabledCredential = errors.New("activator: disabled credential")
 	// ErrInvalidRequest 表示激活请求缺少必要的目标、周期或模型信息。
 	ErrInvalidRequest = errors.New("activator: invalid request")
 	// ErrMissingDependency 表示 Activator 缺少必要内部依赖。
 	ErrMissingDependency = errors.New("activator: missing dependency")
-	// ErrAuthFileNotFound 表示启用禁用凭证时没有找到匹配的宿主凭证文档。
+	// ErrAuthFileNotFound 表示自动启用禁用凭证时没有找到匹配的宿主凭证文档。
 	ErrAuthFileNotFound = errors.New("activator: auth file not found")
 )
 
@@ -30,7 +31,7 @@ type Status string
 const (
 	// StatusSuccess 表示 host.model.execute 返回 HTTP 2xx 且状态写入完成。
 	StatusSuccess Status = "success"
-	// StatusFailed 表示 host.model.execute、临时启用或状态写入前的流程失败。
+	// StatusFailed 表示 host.model.execute、自动启用或状态写入前的流程失败。
 	StatusFailed Status = "failed"
 	// StatusSkipped 表示目标不允许激活，流程未调用宿主模型接口。
 	StatusSkipped Status = "skipped"

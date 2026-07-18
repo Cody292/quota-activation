@@ -145,7 +145,7 @@ func registrationResult() RegisterResult {
 
 func configFields() []ConfigField {
 	return []ConfigField{
-		{Name: "activation_models", Type: "object", Description: localizedDescription("Codex 与 Antigravity 模型组使用的唤醒模型映射；未填写时使用安全默认值。", "Activation model mapping for Codex and Antigravity model groups; safe defaults are used when omitted.")},
+		{Name: "activation_models", Type: "object", Description: localizedDescription("兼容旧配置；手动唤醒模型实际来自 CPA 凭证可用模型。", "Compatibility field; manual activation models are loaded from CPA credential available models.")},
 		{Name: "activation_models.antigravity.enable_gemini", Type: "boolean", Description: localizedDescription("是否启用 Antigravity Gemini 模型组唤醒。", "Whether Antigravity Gemini model-group activation is enabled.")},
 		{Name: "activation_models.antigravity.enable_claude_gpt", Type: "boolean", Description: localizedDescription("是否启用 Antigravity Claude/GPT 模型组唤醒。", "Whether Antigravity Claude/GPT model-group activation is enabled.")},
 		{Name: "auto_activate", Type: "boolean", Description: localizedDescription("启用调度器自动配额唤醒；默认 false，因此手动唤醒仍是默认方式。", "Enable scheduler-driven automatic quota activation; default is false, so manual activation remains the default.")},
@@ -154,11 +154,10 @@ func configFields() []ConfigField {
 		{Name: "min_probe_interval", Type: "string", Description: localizedDescription("最小配额探测间隔，按 Go time.ParseDuration 解析，例如 5m。", "Minimum quota probe interval parsed by Go time.ParseDuration, for example 5m.")},
 		{Name: "activation_request_timeout", Type: "string", Description: localizedDescription("唤醒模型请求超时，按 Go time.ParseDuration 解析，例如 60s。", "Activation model request timeout parsed by Go time.ParseDuration, for example 60s.")},
 		{Name: "max_concurrency", Type: "integer", Description: localizedDescription("最大并发唤醒请求数；当前流程预期为 1。", "Maximum concurrent activation requests; the current workflow expects 1.")},
-		{Name: "activation_prompt", Type: "string", Description: localizedDescription("通过 host.model.execute 发送的配额唤醒提示词。", "Prompt sent through host.model.execute for quota activation.")},
-		{Name: "state_path", Type: "string", Description: localizedDescription("用于脱敏唤醒记录的相对状态文件路径。", "Relative state file path used for sanitized activation records.")},
-		{Name: "enable_before_activation", Type: "boolean", Description: localizedDescription("显式为 true 时，唤醒前临时启用已禁用凭证并在结束后恢复。", "When explicitly true, temporarily enable disabled credentials before activation and restore them afterward.")},
+			{Name: "activation_prompt", Type: "string", Description: localizedDescription("通过 host.model.execute 发送的配额唤醒提示词。", "Prompt sent through host.model.execute for quota activation.")},
+			{Name: "enable_before_activation", Type: "boolean", Description: localizedDescription("显式为 true 时，达到唤醒条件后自动启用已禁用凭证并保持启用。", "When explicitly true, automatically enable disabled credentials that meet activation conditions and keep them enabled.")},
+		}
 	}
-}
 
 func localizedDescription(chinese string, english string) string {
 	return chinese + "\n" + english

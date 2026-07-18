@@ -50,10 +50,18 @@ func decodeSchedulerRequest(raw []byte) (scheduler.PickRequest, error) {
 type schedulerRequestWire struct {
 	Candidates []schedulerCandidateWire `json:"Candidates"`
 	Headers    map[string][]string      `json:"Headers"`
-	Metadata   map[string][]string      `json:"Metadata"`
+	Metadata   map[string]any           `json:"Metadata"`
+	Options    schedulerOptionsWire     `json:"Options"`
+}
+
+type schedulerOptionsWire struct {
+	Headers  map[string][]string `json:"Headers"`
+	Metadata map[string]any      `json:"Metadata"`
 }
 
 type schedulerCandidateWire struct {
+	ID             string `json:"ID"`
+	IDLower        string `json:"id"`
 	AuthID         string `json:"AuthID"`
 	AuthIDLower    string `json:"auth_id"`
 	AuthIndex      string `json:"AuthIndex"`
@@ -63,7 +71,53 @@ type schedulerCandidateWire struct {
 func (w schedulerRequestWire) toPickRequest() scheduler.PickRequest {
 	candidates := make([]scheduler.Candidate, 0, len(w.Candidates))
 	for _, candidate := range w.Candidates {
-		candidates = append(candidates, scheduler.Candidate{AuthID: firstNonEmpty(candidate.AuthID, candidate.AuthIDLower, candidate.AuthIndex, candidate.AuthIndexLower)})
+		candidates = append(candidates, scheduler.Candidate{AuthID: firstNonEmpty(
+			candidate.ID,
+			candidate.IDLower,
+			candidate.AuthID,
+			candidate.AuthIDLower,
+			candidate.AuthIndex,
+			candidate.AuthIndexLower,
+		)})
 	}
-	return scheduler.PickRequest{Candidates: candidates, Headers: w.Headers, Metadata: w.Metadata}
+	headers := w.Headers
+	if len(w.Options.Headers) > 0 {
+		headers = w.Options.Headers
+	}
+	metadata := normalizeStringValues(w.Metadata)
+	if optionMetadata := normalizeStringValues(w.Options.Metadata); len(optionMetadata) > 0 {
+		metadata = optionMetadata
+	}
+	return scheduler.PickRequest{Candidates: candidates, Headers: headers, Metadata: metadata}
+}
+
+func normalizeStringValues(values map[string]any) map[string][]string {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized := make(map[string][]string, len(values))
+	for key, raw := range values {
+		switch value := raw.(type) {
+		case string:
+			normalized[key] = []string{value}
+		case []string:
+			if len(value) > 0 {
+				normalized[key] = append([]string(nil), value...)
+			}
+		case []any:
+			items := make([]string, 0, len(value))
+			for _, item := range value {
+				if text, ok := item.(string); ok {
+					items = append(items, text)
+				}
+			}
+			if len(items) > 0 {
+				normalized[key] = items
+			}
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }

@@ -2,8 +2,6 @@ package activator
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -33,6 +31,7 @@ func New(options Options) *Activator {
 }
 
 // Activate 创建一次性 session nonce，调用 host.model.execute，并写入脱敏状态。
+// 禁用凭证统一走 enableIfNeeded 后继续唤醒，不受 enable_before_activation 阻断。
 func (a *Activator) Activate(ctx context.Context, request Request) (Result, error) {
 	result := a.initialResult(request)
 	if !a.runMu.TryLock() {
@@ -49,28 +48,21 @@ func (a *Activator) Activate(ctx context.Context, request Request) (Result, erro
 	if err != nil {
 		return a.failAndStore(ctx, result, err)
 	}
-	if normalized.Disabled && !a.config.EnableBeforeActivation {
-		return a.skipDisabled(ctx, result)
-	}
 
-	restore, enableErr := a.enableIfNeeded(ctx, normalized)
+	enabled, enableErr := a.enableIfNeeded(ctx, normalized)
 	if enableErr != nil {
 		return a.failAndStore(ctx, result, enableErr)
 	}
-	if restore != nil {
+	if enabled {
 		result.TemporaryEnabled = true
 	}
 
 	result, activateErr := a.execute(ctx, normalized, result)
-	if restore != nil {
-		restoreErr := restore(ctx)
-		result.RestoredDisabled = restoreErr == nil
-		if restoreErr != nil {
-			activateErr = errors.Join(activateErr, fmt.Errorf("restore disabled credential: %w", safeError(restoreErr)))
-		}
-	}
 	if activateErr != nil {
 		return a.failAndStore(ctx, result, activateErr)
+	}
+	if result.Status == StatusFailed && result.LastError != "" {
+		return a.storeResult(ctx, result)
 	}
 	result.Status = StatusSuccess
 	result.Success = true
@@ -82,14 +74,4 @@ func (a *Activator) checkDependencies() error {
 		return ErrMissingDependency
 	}
 	return nil
-}
-
-func (a *Activator) skipDisabled(ctx context.Context, result Result) (Result, error) {
-	result.Status = StatusSkipped
-	result.LastError = state.Redact(ErrDisabledCredential.Error())
-	stored, storeErr := a.storeResult(ctx, result)
-	if storeErr != nil {
-		return stored, errors.Join(ErrDisabledCredential, storeErr)
-	}
-	return stored, ErrDisabledCredential
 }

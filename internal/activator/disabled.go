@@ -9,41 +9,28 @@ import (
 	"quota-activation/internal/host"
 )
 
-type restoreFunc func(context.Context) error
-
-func (a *Activator) enableIfNeeded(ctx context.Context, request Request) (restoreFunc, error) {
+func (a *Activator) enableIfNeeded(ctx context.Context, request Request) (bool, error) {
 	if !request.Disabled {
-		return nil, nil
+		return false, nil
 	}
 	files, err := a.host.ListAuthFiles(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list auth files: %w", safeError(err))
+		return false, fmt.Errorf("list auth files: %w", safeError(err))
 	}
 	for _, file := range files {
 		updated, ok, err := enableAuthFile(file, request.AuthID)
 		if err != nil {
-			return nil, err
+			return false, err
 		}
 		if !ok {
 			continue
 		}
-		originalName := file.Name
-		originalData := append([]byte(nil), file.Data...)
-		if err := a.host.SaveAuthFile(ctx, originalName, updated); err != nil {
-			return nil, fmt.Errorf("temporarily enable auth file: %w", safeError(err))
+		if err := a.host.SaveAuthFile(ctx, file.Name, updated); err != nil {
+			return false, fmt.Errorf("enable auth file: %w", safeError(err))
 		}
-		return restoreOriginalAuthFile(a.host, originalName, originalData), nil
+		return true, nil
 	}
-	return nil, ErrAuthFileNotFound
-}
-
-func restoreOriginalAuthFile(client host.Client, name string, data []byte) restoreFunc {
-	return func(ctx context.Context) error {
-		if err := client.SaveAuthFile(ctx, name, data); err != nil {
-			return fmt.Errorf("save original auth file: %w", safeError(err))
-		}
-		return nil
-	}
+	return false, ErrAuthFileNotFound
 }
 
 func enableAuthFile(file host.AuthFile, authID string) ([]byte, bool, error) {

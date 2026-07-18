@@ -174,12 +174,57 @@ func (hostCallbackAdapter) ListAuthFiles(ctx context.Context) ([]host.AuthFile, 
 	if err := callHost(ctx, "host.auth.list", map[string]any{}, &response); err != nil {
 		return nil, err
 	}
+	for i := range response.Files {
+		if response.Files[i].AuthIndex == "" {
+			continue
+		}
+		physical, err := loadPhysicalAuthFile(ctx, response.Files[i].AuthIndex)
+		if err != nil {
+			continue
+		}
+		response.Files[i] = mergePhysicalAuthFile(response.Files[i], physical)
+	}
 	return response.Files, nil
+}
+
+func loadPhysicalAuthFile(ctx context.Context, authIndex string) (host.AuthFile, error) {
+	var response struct {
+		AuthIndex string          `json:"auth_index"`
+		Name      string          `json:"name"`
+		JSON      json.RawMessage `json:"json"`
+	}
+	if err := callHost(ctx, "host.auth.get", map[string]any{"auth_index": authIndex}, &response); err != nil {
+		return host.AuthFile{}, err
+	}
+	return host.AuthFile{AuthIndex: response.AuthIndex, Name: response.Name, Data: append([]byte(nil), response.JSON...)}, nil
+}
+
+func mergePhysicalAuthFile(base host.AuthFile, physical host.AuthFile) host.AuthFile {
+	if base.Name == "" {
+		base.Name = physical.Name
+	}
+	if base.AuthIndex == "" {
+		base.AuthIndex = physical.AuthIndex
+	}
+	if physical.Data != nil {
+		base.Data = physical.Data
+	}
+	return base
+}
+
+func (hostCallbackAdapter) GetRuntimeAuthFile(ctx context.Context, authIndex string) (host.AuthFile, error) {
+	var response struct {
+		Auth host.AuthFile `json:"auth"`
+	}
+	if err := callHost(ctx, "host.auth.get_runtime", map[string]any{"auth_index": authIndex}, &response); err != nil {
+		return host.AuthFile{}, err
+	}
+	return response.Auth, nil
 }
 
 func (hostCallbackAdapter) SaveAuthFile(ctx context.Context, name string, data []byte) error {
 	var response json.RawMessage
-	return callHost(ctx, "host.auth.save", map[string]any{"name": name, "data": data}, &response)
+	return callHost(ctx, "host.auth.save", map[string]any{"name": name, "json": json.RawMessage(data)}, &response)
 }
 
 func callHost(ctx context.Context, method string, payload any, target any) error {
