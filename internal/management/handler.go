@@ -69,7 +69,7 @@ func (h *Handler) handleDiagnostics(w http.ResponseWriter) {
 	response.Config = &diagnosticConfig{
 		AutoActivate:           h.config.AutoActivate,
 		EnableBeforeActivation: h.config.EnableBeforeActivation,
-		ActivationModelCodex:   state.Redact(h.config.ActivationModels.Codex),
+		ActivationModelCodex:   state.Redact(h.config.ActivationModels.Codex.Models),
 	}
 	if response.AuthID != "" {
 		response.StateRecords = []state.Record{{

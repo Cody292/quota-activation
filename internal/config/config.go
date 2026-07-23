@@ -17,8 +17,6 @@ var (
 type Config struct {
 	AutoActivate             bool
 	ScanInterval             time.Duration
-	MaxProbeInterval         time.Duration
-	MinProbeInterval         time.Duration
 	ActivationRequestTimeout time.Duration
 	MaxConcurrency           int
 	ActivationPrompt         string
@@ -29,16 +27,19 @@ type Config struct {
 
 // ActivationModels 定义不同 provider 唤醒请求必须显式配置的模型。
 type ActivationModels struct {
-	Codex       string
+	Codex       CodexActivationModels
 	Antigravity AntigravityActivationModels
+}
+
+// CodexActivationModels 定义 Codex 自动唤醒模型。
+type CodexActivationModels struct {
+	Models string
 }
 
 // AntigravityActivationModels 定义 Antigravity 不同模型组的唤醒模型。
 type AntigravityActivationModels struct {
-	Gemini          string
-	ClaudeGPT       string
-	EnableGemini    bool
-	EnableClaudeGPT bool
+	ModelsGroup string
+	Models      string
 }
 
 type rawConfig struct {
@@ -46,8 +47,6 @@ type rawConfig struct {
 	Priority                 *int                 `json:"priority"`
 	AutoActivate             *bool                `json:"auto_activate"`
 	ScanInterval             *string              `json:"scan_interval"`
-	MaxProbeInterval         *string              `json:"max_probe_interval"`
-	MinProbeInterval         *string              `json:"min_probe_interval"`
 	ActivationRequestTimeout *string              `json:"activation_request_timeout"`
 	MaxConcurrency           *int                 `json:"max_concurrency"`
 	ActivationPrompt         *string              `json:"activation_prompt"`
@@ -57,11 +56,17 @@ type rawConfig struct {
 }
 
 type rawActivationModels struct {
-	Codex       *string                    `json:"codex"`
+	Codex       *rawCodexActivationModels  `json:"codex"`
 	Antigravity *rawAntigravityModelsGroup `json:"antigravity"`
 }
 
+type rawCodexActivationModels struct {
+	Models *string `json:"models"`
+}
+
 type rawAntigravityModelsGroup struct {
+	ModelsGroup     *string `json:"models_group"`
+	Models          *string `json:"models"`
 	Gemini          *string `json:"gemini"`
 	ClaudeGPT       *string `json:"claude_gpt"`
 	EnableGemini    *bool   `json:"enable_gemini"`
@@ -73,20 +78,30 @@ func Default() Config {
 	return Config{
 		AutoActivate:             false,
 		ScanInterval:             30 * time.Minute,
-		MaxProbeInterval:         30 * time.Minute,
-		MinProbeInterval:         5 * time.Minute,
 		ActivationRequestTimeout: time.Minute,
 		MaxConcurrency:           1,
 		ActivationPrompt:         "quota activation ping",
 		StatePath:                "quota-activation/state.json",
 		EnableBeforeActivation:   false,
-		ActivationModels: ActivationModels{
-			Antigravity: AntigravityActivationModels{
-				EnableGemini:    true,
-				EnableClaudeGPT: true,
-			},
-		},
+		ActivationModels:         ActivationModels{},
 	}
+}
+
+// UnmarshalJSON 兼容旧版 activation_models.codex 标量与新版对象结构。
+func (raw *rawCodexActivationModels) UnmarshalJSON(data []byte) error {
+	var legacy string
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		trimmed := strings.TrimSpace(legacy)
+		raw.Models = &trimmed
+		return nil
+	}
+	type rawCodexAlias rawCodexActivationModels
+	var decoded rawCodexAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*raw = rawCodexActivationModels(decoded)
+	return nil
 }
 
 // Parse 将 CPA 传入的插件配置 JSON 字节解析为已校验配置。
@@ -135,7 +150,7 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	if raw.AutoActivate != nil {
 		cfg.AutoActivate = *raw.AutoActivate
 	}
-	if raw.ActivationPrompt != nil {
+	if raw.ActivationPrompt != nil && strings.TrimSpace(*raw.ActivationPrompt) != "" {
 		cfg.ActivationPrompt = *raw.ActivationPrompt
 	}
 	if raw.StatePath != nil {
@@ -151,20 +166,22 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 		return Config{}, invalid("max_concurrency", "必须大于等于 1")
 	}
 	durationFields := []struct {
-		name   string
-		raw    *string
-		target *time.Duration
+		name        string
+		raw         *string
+		target      *time.Duration
+		missingUnit string
 	}{
-		{"scan_interval", raw.ScanInterval, &cfg.ScanInterval},
-		{"max_probe_interval", raw.MaxProbeInterval, &cfg.MaxProbeInterval},
-		{"min_probe_interval", raw.MinProbeInterval, &cfg.MinProbeInterval},
-		{"activation_request_timeout", raw.ActivationRequestTimeout, &cfg.ActivationRequestTimeout},
+		{"scan_interval", raw.ScanInterval, &cfg.ScanInterval, "m"},
+		{"activation_request_timeout", raw.ActivationRequestTimeout, &cfg.ActivationRequestTimeout, "s"},
 	}
 	for _, field := range durationFields {
 		if field.raw == nil {
 			continue
 		}
-		parsed, err := parseDuration(field.name, *field.raw)
+		if strings.TrimSpace(*field.raw) == "" {
+			continue
+		}
+		parsed, err := parseDuration(field.name, *field.raw, field.missingUnit)
 		if err != nil {
 			return Config{}, err
 		}
@@ -180,36 +197,105 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 
 func (raw *rawActivationModels) parse(base ActivationModels) (ActivationModels, error) {
 	models := base
-	if raw != nil && raw.Codex != nil {
-		models.Codex = strings.TrimSpace(*raw.Codex)
+	if raw != nil && raw.Codex != nil && raw.Codex.Models != nil {
+		models.Codex.Models = strings.TrimSpace(*raw.Codex.Models)
 	}
 	if raw != nil && raw.Antigravity != nil {
-		models.Antigravity = raw.Antigravity.parse(models.Antigravity)
+		var err error
+		models.Antigravity, err = raw.Antigravity.parse(models.Antigravity)
+		if err != nil {
+			return ActivationModels{}, err
+		}
 	}
 	return models, nil
 }
 
-func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) AntigravityActivationModels {
+func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) (AntigravityActivationModels, error) {
 	models := base
+	if raw.ModelsGroup != nil || raw.Models != nil {
+		if raw.ModelsGroup != nil {
+			models.ModelsGroup = strings.TrimSpace(*raw.ModelsGroup)
+		}
+		if raw.Models != nil {
+			models.Models = strings.TrimSpace(*raw.Models)
+		}
+		return validateAntigravityModels(models)
+	}
+
+	legacy := legacyAntigravityModels{}
 	if raw.Gemini != nil {
-		models.Gemini = strings.TrimSpace(*raw.Gemini)
+		legacy.gemini = strings.TrimSpace(*raw.Gemini)
 	}
 	if raw.ClaudeGPT != nil {
-		models.ClaudeGPT = strings.TrimSpace(*raw.ClaudeGPT)
+		legacy.claudeGPT = strings.TrimSpace(*raw.ClaudeGPT)
 	}
 	if raw.EnableGemini != nil {
-		models.EnableGemini = *raw.EnableGemini
+		legacy.enableGemini = *raw.EnableGemini
 	}
 	if raw.EnableClaudeGPT != nil {
-		models.EnableClaudeGPT = *raw.EnableClaudeGPT
+		legacy.enableClaudeGPT = *raw.EnableClaudeGPT
 	}
-	return models
+	if legacy.enableGemini && legacy.enableClaudeGPT {
+		return AntigravityActivationModels{}, invalid("activation_models.antigravity", "Gemini 与 Claude/GPT 只能启用一种")
+	}
+	if legacy.enableGemini && legacy.gemini == "" {
+		return AntigravityActivationModels{}, invalid("activation_models.antigravity.gemini", "启用 Gemini 组时必须填写")
+	}
+	if legacy.enableClaudeGPT && legacy.claudeGPT == "" {
+		return AntigravityActivationModels{}, invalid("activation_models.antigravity.claude_gpt", "启用 Claude/GPT 组时必须填写")
+	}
+	if legacy.enableGemini {
+		models.ModelsGroup = "gemini"
+		models.Models = legacy.gemini
+	}
+	if legacy.enableClaudeGPT {
+		models.ModelsGroup = "claude_gpt"
+		models.Models = legacy.claudeGPT
+	}
+	return models, nil
 }
 
-func parseDuration(field string, raw string) (time.Duration, error) {
-	parsed, err := time.ParseDuration(raw)
+type legacyAntigravityModels struct {
+	gemini          string
+	claudeGPT       string
+	enableGemini    bool
+	enableClaudeGPT bool
+}
+
+func validateAntigravityModels(models AntigravityActivationModels) (AntigravityActivationModels, error) {
+	switch models.ModelsGroup {
+	case "":
+		if models.Models != "" {
+			return AntigravityActivationModels{}, invalid("activation_models.antigravity.models_group", "填写模型名时必须选择模型组")
+		}
+	case "gemini", "claude_gpt":
+		if models.Models == "" {
+			return AntigravityActivationModels{}, invalid("activation_models.antigravity.models", "选择模型组时必须填写")
+		}
+	default:
+		return AntigravityActivationModels{}, invalid("activation_models.antigravity.models_group", "必须是 gemini 或 claude_gpt")
+	}
+	return models, nil
+}
+
+func parseDuration(field string, raw string, missingUnit string) (time.Duration, error) {
+	text := strings.TrimSpace(raw)
+	if missingUnit == "" {
+		missingUnit = "m"
+	}
+	if _, err := time.ParseDuration(text); err != nil && strings.Contains(err.Error(), "missing unit") {
+		text += missingUnit
+	}
+	parsed, err := time.ParseDuration(text)
 	if err != nil {
-		return 0, invalid(field, "必须是 time.ParseDuration 可解析的字符串")
+		unitHint := "分钟"
+		if missingUnit == "s" {
+			unitHint = "秒"
+		}
+		return 0, invalid(field, fmt.Sprintf("必须是可解析的时长字符串，纯数字按%s解析", unitHint))
+	}
+	if parsed <= 0 {
+		return 0, invalid(field, "必须大于 0")
 	}
 	return parsed, nil
 }

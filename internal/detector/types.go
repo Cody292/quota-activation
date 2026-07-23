@@ -30,10 +30,12 @@ type Window string
 const (
 	// WindowUnknown 表示无法识别计量窗口。
 	WindowUnknown Window = "unknown"
-	// WindowFiveHour 表示短周期 5 小时计量窗口。
+	// WindowFiveHour 表示短周期 5 小时计量窗口（自动唤醒默认不使用该窗口判定）。
 	WindowFiveHour Window = "5h"
-	// WindowWeekly 表示周计量窗口。
+	// WindowWeekly 表示周计量窗口（Antigravity 模型组）。
 	WindowWeekly Window = "weekly"
+	// WindowMonthly 表示月计量窗口（Codex Free 等长周期）。
+	WindowMonthly Window = "monthly"
 )
 
 // ModelGroup 标识 Antigravity 独立计量的模型组。

@@ -40,10 +40,11 @@ type RegisterResult struct {
 
 // ConfigField 描述 CPA 管理端渲染插件自有配置时使用的字段元数据。
 type ConfigField struct {
-	Name        string   `json:"Name"`
-	Type        string   `json:"Type"`
-	Description string   `json:"Description"`
-	EnumValues  []string `json:"EnumValues,omitempty"`
+	Name         string   `json:"Name"`
+	Type         string   `json:"Type"`
+	Description  string   `json:"Description"`
+	EnumValues   []string `json:"EnumValues,omitempty"`
+	DefaultValue any      `json:"DefaultValue"`
 }
 
 // Metadata 描述插件展示信息，不包含任何敏感配置。

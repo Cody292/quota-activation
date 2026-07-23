@@ -111,6 +111,39 @@ func (s *Store) Record(key RecordKey) (Record, bool) {
 	return record, ok
 }
 
+// LatestSuccess 返回同 auth_id+provider 下最近一次 success 记录（按 ObservedAt，其次 ResetAt）。
+// 供自动唤醒在无真实 quota_payload 时推断计量窗口。
+func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
+	if s == nil {
+		return Record{}, false
+	}
+	authID = Redact(strings.TrimSpace(authID))
+	provider = Redact(strings.TrimSpace(provider))
+	if authID == "" || provider == "" {
+		return Record{}, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var best Record
+	found := false
+	for _, record := range s.records {
+		if record.AuthID != authID || record.Provider != provider {
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(record.LastResult), "success") {
+			continue
+		}
+		if record.Window == "" || record.ResetAt.IsZero() {
+			continue
+		}
+		if !found || record.ObservedAt.After(best.ObservedAt) || (record.ObservedAt.Equal(best.ObservedAt) && record.ResetAt.After(best.ResetAt)) {
+			best = record
+			found = true
+		}
+	}
+	return best, found
+}
+
 // SaveAtomic 使用同目录临时文件加 rename 原子写入状态 JSON。
 func (s *Store) SaveAtomic(ctx context.Context) (err error) {
 	if err := ctx.Err(); err != nil {

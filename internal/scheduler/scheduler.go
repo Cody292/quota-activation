@@ -34,9 +34,10 @@ type Candidate struct {
 
 // PickRequest 描述 scheduler.pick 所需的内部判定输入。
 type PickRequest struct {
-	Candidates []Candidate
-	Headers    map[string][]string
-	Metadata   map[string][]string
+	Candidates   []Candidate
+	Headers      map[string][]string
+	Metadata     map[string][]string
+	AutoActivate bool
 }
 
 // PickDecision 描述 scheduler.pick 是否接管宿主调度以及选中的目标凭证。

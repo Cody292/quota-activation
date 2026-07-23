@@ -15,7 +15,7 @@ type SchedulerResponse struct {
 }
 
 func (r *Runtime) pickSchedule(raw []byte) []byte {
-	picker, err := r.schedulerPicker()
+	picker, autoActivate, err := r.schedulerPicker()
 	if err != nil {
 		return failure(err)
 	}
@@ -23,17 +23,18 @@ func (r *Runtime) pickSchedule(raw []byte) []byte {
 	if err != nil {
 		return failure(err)
 	}
+	request.AutoActivate = autoActivate
 	decision := picker.Pick(request)
 	return envelopeResult(SchedulerResponse{Handled: decision.Handled, AuthID: decision.AuthID, Reason: decision.Reason}, nil)
 }
 
-func (r *Runtime) schedulerPicker() (scheduler.Picker, error) {
+func (r *Runtime) schedulerPicker() (scheduler.Picker, bool, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.shutdown {
-		return scheduler.Picker{}, ErrShutdown
+		return scheduler.Picker{}, false, ErrShutdown
 	}
-	return r.picker, nil
+	return r.picker, r.config.AutoActivate, nil
 }
 
 func decodeSchedulerRequest(raw []byte) (scheduler.PickRequest, error) {

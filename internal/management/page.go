@@ -4,6 +4,7 @@ import (
 	"net/http"
 )
 
+// allow: SIZE_OK - 内嵌静态资源页以单 HTML 载荷交给 CPA resources 路由；拆分不会降低运行时职责。
 func (h *Handler) handlePage(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -53,6 +54,8 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
     .model-menu-panel.open { display: block; }
     .model-option { width: 100%; min-height: 40px; display: block; border: 0; border-radius: 8px; padding: 8px 12px; background: transparent; color: #111827; font: inherit; text-align: left; cursor: pointer; }
     .model-option:hover, .model-option.active { background: #f3f4f6; }
+    .model-option.disabled { color: #9ca3af; cursor: not-allowed; opacity: .55; }
+    .model-option.disabled:hover { background: transparent; }
     .provider-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
     .provider-tab { min-height: 36px; border: 1px solid #d1d5db; border-radius: 999px; padding: 0 14px; background: #fff; color: #374151; font-weight: 600; cursor: pointer; }
     .provider-tab.active { background: #111827; color: #fff; border-color: #111827; }
@@ -126,18 +129,20 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	            <h3 data-i18n="helpConfigTitle">配置字段说明</h3>
 	            <p data-i18n="helpConfigDesc">配置 quota-activation 插件所需的字段如下：</p>
 	            <ul>
-	              <li><code>auto_activate</code>: 是否开启自动配额唤醒。</li>
-	              <li><code>enable_before_activation</code>: 是否在唤醒前自动启用已被禁用的凭证。</li>
+              <li><code>auto_activate</code>: 是否开启自动配额唤醒。</li>
+              <li><code>enable_before_activation</code>: 是否在唤醒前自动启用已被禁用的凭证。</li>
+              <li><code data-optional="true">scan_interval</code>: 可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。</li>
+              <li><code data-optional="true">activation_request_timeout</code>: 可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。</li>
+              <li><code data-optional="true">max_concurrency</code>: 可选；最大并发唤醒请求数。</li>
+              <li><code data-optional="true">activation_prompt</code>: 可选；唤醒提示词。</li>
 	            </ul>
-	            <h3 data-i18n="helpActivationModelsTitle">activation_models 字段模板</h3>
-	            <p data-i18n="helpActivationModelsDesc">此字段用于配置不同 provider 的激活模型组：</p>
-	            <pre><code>{
-  "antigravity": {
-    "enable_gemini": true,
-    "enable_claude_gpt": true
-  },
-  "codex": "gpt-4"
-}</code></pre>
+	            <h3 data-i18n="helpActivationModelsTitle">自动唤醒模型字段</h3>
+	            <p data-i18n="helpActivationModelsDesc">直接填写模型名称，不需要填写 JSON 对象：</p>
+	            <ul>
+	              <li><code>activation_models.codex.models</code>: Codex 自动唤醒模型名称，例如 <code>gpt-5-mini</code>。</li>
+	              <li><code>activation_models.antigravity.models_group</code>: Antigravity 自动唤醒模型组，可选 <code>gemini</code> 或 <code>claude_gpt</code>。</li>
+	              <li><code>activation_models.antigravity.models</code>: 当前 Antigravity 模型组的模型名称。</li>
+	            </ul>
 	          </div>
 	        </div>
 	      </div>
@@ -182,8 +187,8 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        searchPlaceholder: "搜索凭证...",
 	        helpConfigTitle: "配置字段说明",
 	        helpConfigDesc: "配置 quota-activation 插件所需的字段如下：",
-	        helpActivationModelsTitle: "activation_models 字段模板",
-	        helpActivationModelsDesc: "此字段用于配置不同 provider 的激活模型组："
+	        helpActivationModelsTitle: "自动唤醒模型字段",
+	        helpActivationModelsDesc: "直接填写模型名称，不需要填写 JSON 对象："
 	      },
 	      "en-US": {
 	        activate: "Trigger activation",
@@ -218,8 +223,8 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        searchPlaceholder: "Search credentials...",
 	        helpConfigTitle: "Configuration Fields",
 	        helpConfigDesc: "The fields required to configure the quota-activation plugin are as follows:",
-	        helpActivationModelsTitle: "activation_models template",
-	        helpActivationModelsDesc: "This field is used to configure active model groups for different providers:"
+	        helpActivationModelsTitle: "Automatic activation model fields",
+	        helpActivationModelsDesc: "Enter model names directly; no JSON object is required:"
 	      }
 	    };
 	    let language = "zh-CN";
@@ -370,14 +375,16 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	          }
 	        }
 	      }
+	      const selectedGroup = selectedModel ? selectedModel.group : "";
 	      for (const item of choices) {
 	        const option = document.createElement("button");
 	        option.type = "button";
-	        option.className = "model-option" + (item.value === selectedVal ? " active" : "");
+	        option.disabled = Boolean(selectedGroup && item.group && item.group !== selectedGroup);
+	        option.className = "model-option" + (item.value === selectedVal ? " active" : "") + (option.disabled ? " disabled" : "");
 	        option.dataset.value = item.value;
 	        option.dataset.group = item.group || "";
 	        option.textContent = item.label || item.value;
-	        option.onclick = () => chooseModel(item.value, item.group || "", item.label || item.value);
+	        option.onclick = () => { if (option.disabled) { return; } chooseModel(item.value, item.group || "", item.label || item.value); };
 	        panel.appendChild(option);
 	      }
 	      if (choices.length === 0) {

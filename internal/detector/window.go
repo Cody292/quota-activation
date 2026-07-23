@@ -4,14 +4,19 @@ import "strings"
 
 func classifyWindow(window quotaWindow) Window {
 	if seconds, ok := toInt64(window.LimitWindowSeconds); ok {
-		switch seconds {
-		case 3 * 60 * 60, 5 * 60 * 60:
+		switch {
+		case seconds == 3*60*60 || seconds == 5*60*60:
 			return WindowFiveHour
-		case 7 * 24 * 60 * 60:
+		case seconds == 7*24*60*60:
 			return WindowWeekly
+		case seconds >= 28*24*60*60 && seconds <= 31*24*60*60:
+			return WindowMonthly
 		}
 	}
 	for _, text := range windowTexts(window) {
+		if strings.Contains(text, "monthly") || strings.Contains(text, "month") || strings.Contains(text, "30d") || strings.Contains(text, "30 day") {
+			return WindowMonthly
+		}
 		if strings.Contains(text, "weekly") || strings.Contains(text, "week") || strings.Contains(text, "7d") {
 			return WindowWeekly
 		}
@@ -20,6 +25,20 @@ func classifyWindow(window quotaWindow) Window {
 		}
 	}
 	return WindowUnknown
+}
+
+// windowPreference 用于多窗口时优先长周期（自动唤醒不关心 5h）。
+func windowPreference(window Window) int {
+	switch window {
+	case WindowMonthly:
+		return 3
+	case WindowWeekly:
+		return 2
+	case WindowFiveHour:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func windowTexts(window quotaWindow) []string {

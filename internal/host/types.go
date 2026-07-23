@@ -16,6 +16,8 @@ var ErrModelExecuteStatus = errors.New("host model execute status")
 type Client interface {
 	ModelExecute(ctx context.Context, request ModelExecuteRequest) (ModelExecuteResponse, error)
 	ListAuthFiles(ctx context.Context) ([]AuthFile, error)
+	// GetAuthFile 按 auth_index 读取物理凭证完整 JSON（host.auth.get）。
+	GetAuthFile(ctx context.Context, authIndex string) (AuthFile, error)
 	GetRuntimeAuthFile(ctx context.Context, authIndex string) (AuthFile, error)
 	SaveAuthFile(ctx context.Context, name string, data []byte) error
 }
@@ -109,6 +111,8 @@ type AuthFile struct {
 	Status       string         `json:"status,omitempty"`
 	Disabled     bool           `json:"disabled"`
 	Unavailable  bool           `json:"unavailable,omitempty"`
+	// Priority 是宿主路由优先级；plugin scheduler 候选仅含同模型最高 priority 层。
+	Priority     int            `json:"priority,omitempty"`
 	Metadata     map[string]any `json:"metadata,omitempty"`
 	Attributes   map[string]any `json:"attributes,omitempty"`
 	RecentModels []string       `json:"recent_models,omitempty"`

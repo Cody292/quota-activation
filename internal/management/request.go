@@ -48,7 +48,7 @@ func decodeActivationRequest(request *http.Request) (activationRequest, error) {
 	return decoded, nil
 }
 
-func (r activationRequest) toActivatorRequest(cfg config.Config, observedAt time.Time) (activator.Request, error) {
+func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.Time) (activator.Request, error) {
 	provider, err := parseProvider(r.Provider)
 	if err != nil {
 		return activator.Request{}, err
@@ -57,7 +57,7 @@ func (r activationRequest) toActivatorRequest(cfg config.Config, observedAt time
 	if err != nil {
 		return activator.Request{}, err
 	}
-	if err := ensureModelGroupEnabled(cfg, modelGroup); err != nil {
+	if err := validateManualModelGroup(modelGroup); err != nil {
 		return activator.Request{}, err
 	}
 	model := strings.TrimSpace(r.Model)
@@ -88,22 +88,13 @@ func (r activationRequest) toActivatorRequest(cfg config.Config, observedAt time
 	}, nil
 }
 
-func ensureModelGroupEnabled(cfg config.Config, modelGroup detector.ModelGroup) error {
+func validateManualModelGroup(modelGroup detector.ModelGroup) error {
 	switch modelGroup {
-	case detector.ModelGroupGemini:
-		if !cfg.ActivationModels.Antigravity.EnableGemini {
-			return fmt.Errorf("antigravity model_group gemini is disabled")
-		}
-	case detector.ModelGroupClaudeGPT:
-		if !cfg.ActivationModels.Antigravity.EnableClaudeGPT {
-			return fmt.Errorf("antigravity model_group claude_gpt is disabled")
-		}
-	case detector.ModelGroupNone:
+	case detector.ModelGroupGemini, detector.ModelGroupClaudeGPT, detector.ModelGroupNone:
 		return nil
 	default:
 		return fmt.Errorf("model_group is unsupported")
 	}
-	return nil
 }
 
 func parseProvider(raw string) (detector.Provider, error) {

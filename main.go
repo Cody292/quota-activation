@@ -212,6 +212,10 @@ func mergePhysicalAuthFile(base host.AuthFile, physical host.AuthFile) host.Auth
 	return base
 }
 
+func (hostCallbackAdapter) GetAuthFile(ctx context.Context, authIndex string) (host.AuthFile, error) {
+	return loadPhysicalAuthFile(ctx, authIndex)
+}
+
 func (hostCallbackAdapter) GetRuntimeAuthFile(ctx context.Context, authIndex string) (host.AuthFile, error) {
 	var response struct {
 		Auth host.AuthFile `json:"auth"`

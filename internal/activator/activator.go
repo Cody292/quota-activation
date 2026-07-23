@@ -57,6 +57,14 @@ func (a *Activator) Activate(ctx context.Context, request Request) (Result, erro
 		result.TemporaryEnabled = true
 	}
 
+	// 临时抬高目标 priority，确保进入宿主最高 priority 候选，scheduler nonce 才能命中。
+	// restore 必须用 Background：请求 ctx 在 Activate 返回后可能已取消，会导致恢复写盘静默失败。
+	restorePriority, boostErr := a.boostPriorityForSelection(ctx, normalized.AuthID)
+	if boostErr != nil {
+		return a.failAndStore(ctx, result, boostErr)
+	}
+	defer restorePriority(context.Background())
+
 	result, activateErr := a.execute(ctx, normalized, result)
 	if activateErr != nil {
 		return a.failAndStore(ctx, result, activateErr)

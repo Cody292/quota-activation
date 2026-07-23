@@ -96,13 +96,24 @@ func parseAntigravityGroups(groups []antigravityGroup, modelGroup ModelGroup) (p
 }
 
 func firstAntigravityWindow(windows []quotaWindow, group ModelGroup) (parsedCycle, bool) {
+	// 多窗口时优先 weekly（及更长周期），避免 5h 抢先导致自动唤醒按错误周期去重。
+	var best parsedCycle
+	bestRank := -1
 	for _, window := range windows {
 		cycle, ok := antigravityWindow(window, group)
-		if ok {
-			return cycle, true
+		if !ok {
+			continue
+		}
+		rank := windowPreference(cycle.window)
+		if rank > bestRank {
+			best = cycle
+			bestRank = rank
 		}
 	}
-	return parsedCycle{}, false
+	if bestRank < 0 {
+		return parsedCycle{}, false
+	}
+	return best, true
 }
 
 func antigravityWindow(window quotaWindow, group ModelGroup) (parsedCycle, bool) {

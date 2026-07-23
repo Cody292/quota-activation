@@ -33,6 +33,9 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 		quota.RateLimit.PrimaryWindow,
 		quota.RateLimit.SecondaryWindow,
 	}
+	// 多窗口时优先 monthly > weekly > 5h，避免 Free 月额度被 5h 窗口抢先匹配。
+	var best parsedCycle
+	bestRank := -1
 	for _, window := range windows {
 		resetAt, ok := windowResetAt(observedAt, window)
 		if !ok {
@@ -40,9 +43,16 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 		}
 		cycleWindow := classifyWindow(window)
 		if cycleWindow == WindowUnknown {
-			return parsedCycle{}, fmt.Errorf("codex window: %w", ErrUnknownQuota)
+			continue
 		}
-		return parsedCycle{provider: ProviderCodex, window: cycleWindow, resetAt: resetAt}, nil
+		rank := windowPreference(cycleWindow)
+		if rank > bestRank {
+			best = parsedCycle{provider: ProviderCodex, window: cycleWindow, resetAt: resetAt}
+			bestRank = rank
+		}
 	}
-	return parsedCycle{}, fmt.Errorf("codex reset_at: %w", ErrUnknownQuota)
+	if bestRank < 0 {
+		return parsedCycle{}, fmt.Errorf("codex reset_at: %w", ErrUnknownQuota)
+	}
+	return best, nil
 }
