@@ -1,29 +1,43 @@
+# 构建产物
+quota-activation
+quota-activation.h
+quota-activation.so
+quota-activation.dylib
+quota-activation.dll
 *.so
+*.dylib
+*.dll
+*.exe
 *.h
 *.a
 *.o
 *.test
-*_test.go
 *.out
 
 bin/
 dist/
 tmp/
 build/
+package/
 
 coverage.out
 coverage.html
 *.coverprofile
 
+# 本地运行与缓存
+*.log
+*.tmp
+*.bak
+*.swp
+.DS_Store
+state.json
+*.state
+
+# 本地配置与敏感材料
 .env
 .env.*
 .local/
 *.local
-*.log
-state.json
-*.state
-
-# Sensitive local credentials and management secrets.
 management-key.txt
 *management-key*
 *token*
@@ -31,7 +45,21 @@ management-key.txt
 *.key
 *.pem
 *.crt
+*.p12
+*.pfx
 auth-files/
 auth_files/
 credentials/
 *.auth.json
+
+# 本地规划/草稿文档
+planning-with-files/
+AGENTS.md
+大纲.md
+git规范.md
+草稿.md
+
+# 禁止测试资产误入发布仓库
+*_test.go
+testdata/
+**/testdata/

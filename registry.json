@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "quota-activation",
+      "name": "Quota Activation",
+      "description": "Manual and automatic quota reset activation for Codex and Antigravity credentials.",
+      "author": "Cody292",
+      "version": "0.0.1",
+      "repository": "https://github.com/Cody292/quota-activation",
+      "homepage": "https://github.com/Cody292/quota-activation",
+      "license": "MIT",
+      "tags": ["quota", "activation", "codex", "antigravity", "management"]
+    }
+  ]
+}

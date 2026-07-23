@@ -19,7 +19,8 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
     body { margin: 0; background: #f8fafc; color: #111827; }
     main { max-width: 760px; margin: 0 auto; padding: 48px 24px; }
     section { position: relative; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px; box-shadow: 0 12px 30px rgba(15, 23, 42, .08); }
-    h1 { margin: 0; font-size: 24px; white-space: nowrap; }
+    h1 { margin: 0; font-size: 24px; white-space: nowrap; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .version-badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 3px 9px; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 750; letter-spacing: 0; }
     p { line-height: 1.7; color: #4b5563; }
     code { background: #f3f4f6; border-radius: 6px; padding: 2px 6px; }
     label { display: block; margin: 18px 0 8px; color: #374151; font-weight: 600; }
@@ -82,7 +83,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-	          <h1 data-i18n="title">配额唤醒</h1>
+	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.1</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
