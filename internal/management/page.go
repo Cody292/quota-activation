@@ -83,7 +83,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.1</span></h1>
+	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.2</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -130,19 +130,19 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	            <h3 data-i18n="helpConfigTitle">配置字段说明</h3>
 	            <p data-i18n="helpConfigDesc">配置 quota-activation 插件所需的字段如下：</p>
 	            <ul>
-              <li><code>auto_activate</code>: 是否开启自动配额唤醒。</li>
-              <li><code>enable_before_activation</code>: 是否在唤醒前自动启用已被禁用的凭证。</li>
-              <li><code data-optional="true">scan_interval</code>: 可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。</li>
-              <li><code data-optional="true">activation_request_timeout</code>: 可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。</li>
-              <li><code data-optional="true">max_concurrency</code>: 可选；最大并发唤醒请求数。</li>
-              <li><code data-optional="true">activation_prompt</code>: 可选；唤醒提示词。</li>
+	              <li><code>auto_activate</code>: <span data-i18n="helpAutoActivate">是否开启自动配额唤醒。</span></li>
+	              <li><code>enable_before_activation</code>: <span data-i18n="helpEnableBefore">是否在唤醒前自动启用已被禁用的凭证。</span></li>
+	              <li><code data-optional="true">scan_interval</code>: <span data-i18n="helpScanInterval">可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。</span></li>
+	              <li><code data-optional="true">activation_request_timeout</code>: <span data-i18n="helpActivationTimeout">可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。</span></li>
+	              <li><code data-optional="true">max_concurrency</code>: <span data-i18n="helpMaxConcurrency">可选；最大并发唤醒请求数。</span></li>
+	              <li><code data-optional="true">activation_prompt</code>: <span data-i18n="helpActivationPrompt">可选；唤醒提示词。</span></li>
 	            </ul>
 	            <h3 data-i18n="helpActivationModelsTitle">自动唤醒模型字段</h3>
 	            <p data-i18n="helpActivationModelsDesc">直接填写模型名称，不需要填写 JSON 对象：</p>
 	            <ul>
-	              <li><code>activation_models.codex.models</code>: Codex 自动唤醒模型名称，例如 <code>gpt-5-mini</code>。</li>
-	              <li><code>activation_models.antigravity.models_group</code>: Antigravity 自动唤醒模型组，可选 <code>gemini</code> 或 <code>claude_gpt</code>。</li>
-	              <li><code>activation_models.antigravity.models</code>: 当前 Antigravity 模型组的模型名称。</li>
+	              <li><code>activation_models.codex.models</code>: <span data-i18n="helpCodexModels">Codex 自动唤醒模型名称，例如 <code>gpt-5-mini</code>。</span></li>
+	              <li><code>activation_models.antigravity.models_group</code>: <span data-i18n="helpAntigravityGroup">Antigravity 自动唤醒模型组，可选 <code>gemini</code> 或 <code>claude_gpt</code>。</span></li>
+	              <li><code>activation_models.antigravity.models</code>: <span data-i18n="helpAntigravityModels">当前 Antigravity 模型组的模型名称。</span></li>
 	            </ul>
 	          </div>
 	        </div>
@@ -189,7 +189,16 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpConfigTitle: "配置字段说明",
 	        helpConfigDesc: "配置 quota-activation 插件所需的字段如下：",
 	        helpActivationModelsTitle: "自动唤醒模型字段",
-	        helpActivationModelsDesc: "直接填写模型名称，不需要填写 JSON 对象："
+	        helpActivationModelsDesc: "直接填写模型名称，不需要填写 JSON 对象：",
+	        helpAutoActivate: "是否开启自动配额唤醒。",
+	        helpEnableBefore: "是否在唤醒前自动启用已被禁用的凭证。",
+	        helpScanInterval: "可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。",
+	        helpActivationTimeout: "可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。",
+	        helpMaxConcurrency: "可选；最大并发唤醒请求数。",
+	        helpActivationPrompt: "可选；唤醒提示词。",
+	        helpCodexModels: "Codex 自动唤醒模型名称，例如 gpt-5-mini。",
+	        helpAntigravityGroup: "Antigravity 自动唤醒模型组，可选 gemini 或 claude_gpt。",
+	        helpAntigravityModels: "当前 Antigravity 模型组的模型名称。"
 	      },
 	      "en-US": {
 	        activate: "Trigger activation",
@@ -225,7 +234,16 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpConfigTitle: "Configuration Fields",
 	        helpConfigDesc: "The fields required to configure the quota-activation plugin are as follows:",
 	        helpActivationModelsTitle: "Automatic activation model fields",
-	        helpActivationModelsDesc: "Enter model names directly; no JSON object is required:"
+	        helpActivationModelsDesc: "Enter model names directly; no JSON object is required:",
+	        helpAutoActivate: "Whether to enable automatic quota activation.",
+	        helpEnableBefore: "Whether to automatically enable disabled credentials before activation.",
+	        helpScanInterval: "Optional; automatic scan interval in minutes. Enter a number only (default 30).",
+	        helpActivationTimeout: "Optional; activation request timeout in seconds. Enter a number only (default 60).",
+	        helpMaxConcurrency: "Optional; maximum concurrent activation requests.",
+	        helpActivationPrompt: "Optional; activation prompt text.",
+	        helpCodexModels: "Codex automatic activation model name, for example gpt-5-mini.",
+	        helpAntigravityGroup: "Antigravity automatic activation model group: gemini or claude_gpt.",
+	        helpAntigravityModels: "Model name for the current Antigravity model group."
 	      }
 	    };
 	    let language = "zh-CN";
@@ -243,8 +261,78 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    function activationErrorMessage(error) { const raw = String(error && error.message ? error.message : error); try { const payload = JSON.parse(raw); return payload.last_error || payload.message || raw || textFor("activationFailed"); } catch (_) { return raw || textFor("activationFailed"); } }
 	    async function managementFetch(path, options) { const key = managementKey(); if (!key) { return null; } const response = await fetch(path, { ...(options || {}), headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", ...((options && options.headers) || {}) } }); const text = await response.text(); if (!response.ok) { throw new Error(text || response.statusText); } return text ? JSON.parse(text) : {}; }
 	    async function verifyManagementKey(button) { const buttonState = setButtonBusy(button, "verifyingKey"); try { await managementFetch(STATUS_PATH, { method: "GET" }); document.getElementById("loginGate").hidden = true; document.getElementById("appShell").hidden = false; await loadAuthFiles(); message(textFor("keyPassed")); } catch (error) { message(shortError("keyFailed")); } finally { restoreButton(buttonState); } }
-	    async function loadAuthFiles(button) { const buttonState = setButtonBusy(button, "loadingCredentials"); try { const result = await managementFetch(AUTH_FILES_PATH, { method: "GET" }); if (!result) { return; } authFiles = Array.isArray(result.files) ? result.files : []; await loadCredentialModels(); renderAuthFiles(); syncModelOptions(); if (authFiles.length === 0) { message(textFor("noAuthFiles")); } } catch (error) { message(activationErrorMessage(error)); } finally { restoreButton(buttonState); } }
-	    async function loadCredentialModels() { for (const credential of authFiles) { if (!credential || !credential.name) { continue; } try { const result = await managementFetch(AUTH_FILE_MODELS_PATH + "?name=" + encodeURIComponent(credential.name), { method: "GET" }); credential.models = modelChoicesForCredential(credential, Array.isArray(result && result.models) ? result.models : []); } catch (_) { credential.models = Array.isArray(credential.models) ? credential.models : []; } } }
+	    function setManualActionBusy(busy, labelKey) {
+	      const refreshBtn = document.getElementById("refreshCredentialsButton");
+	      const activateBtn = document.getElementById("manualActivateButton");
+	      const state = { refresh: null, activate: null };
+	      if (busy) {
+	        if (refreshBtn) {
+	          state.refresh = { disabled: refreshBtn.disabled, text: refreshBtn.textContent, labelKey: refreshBtn.dataset.i18n || "refresh" };
+	          refreshBtn.disabled = true;
+	          if (labelKey) { refreshBtn.textContent = textFor(labelKey); }
+	        }
+	        if (activateBtn) {
+	          state.activate = { disabled: activateBtn.disabled, text: activateBtn.textContent, labelKey: activateBtn.dataset.i18n || "activate" };
+	          activateBtn.disabled = true;
+	        }
+	      }
+	      return state;
+	    }
+	    function restoreManualActionBusy(state) {
+	      if (!state) { return; }
+	      const refreshBtn = document.getElementById("refreshCredentialsButton");
+	      const activateBtn = document.getElementById("manualActivateButton");
+	      if (refreshBtn && state.refresh) {
+	        refreshBtn.disabled = Boolean(state.refresh.disabled);
+	        refreshBtn.textContent = state.refresh.labelKey ? textFor(state.refresh.labelKey) : state.refresh.text;
+	      }
+	      if (activateBtn && state.activate) {
+	        activateBtn.disabled = Boolean(state.activate.disabled);
+	        activateBtn.textContent = state.activate.labelKey ? textFor(state.activate.labelKey) : state.activate.text;
+	      }
+	    }
+	    async function loadAuthFiles(button) {
+	      void button;
+	      const manualBusy = setManualActionBusy(true, "loadingCredentials");
+	      try {
+	        const result = await managementFetch(AUTH_FILES_PATH, { method: "GET" });
+	        if (!result) { return; }
+	        authFiles = Array.isArray(result.files) ? result.files : [];
+	        await loadCredentialModels();
+	        renderAuthFiles();
+	        syncModelOptions();
+	        if (authFiles.length === 0) { message(textFor("noAuthFiles")); }
+	      } catch (error) {
+	        message(activationErrorMessage(error));
+	      } finally {
+	        restoreManualActionBusy(manualBusy);
+	      }
+	    }
+	    async function loadCredentialModels() {
+	      const providerCache = {};
+	      const pendingByProvider = {};
+	      for (const credential of authFiles) {
+	        if (!credential) { continue; }
+	        if (Array.isArray(credential.models) && credential.models.length > 0) { continue; }
+	        const provider = String(credential.provider || "").toLowerCase();
+	        const cacheKey = provider || ("name:" + String(credential.name || credential.auth_id || ""));
+	        if (!credential.name && !providerCache[cacheKey]) { credential.models = Array.isArray(credential.models) ? credential.models : []; continue; }
+	        try {
+	          if (!Object.prototype.hasOwnProperty.call(providerCache, cacheKey)) {
+	            if (!pendingByProvider[cacheKey]) {
+	              const sampleName = credential.name || (authFiles.find((item) => item && item.name && String(item.provider || "").toLowerCase() === provider) || {}).name;
+	              pendingByProvider[cacheKey] = sampleName
+	                ? managementFetch(AUTH_FILE_MODELS_PATH + "?name=" + encodeURIComponent(sampleName), { method: "GET" }).then((result) => Array.isArray(result && result.models) ? result.models : []).catch(() => [])
+	                : Promise.resolve([]);
+	            }
+	            providerCache[cacheKey] = await pendingByProvider[cacheKey];
+	          }
+	          credential.models = modelChoicesForCredential(credential, providerCache[cacheKey] || []);
+	        } catch (_) {
+	          credential.models = Array.isArray(credential.models) ? credential.models : [];
+	        }
+	      }
+	    }
 	    function modelChoicesForCredential(credential, models) { const choices = []; for (const item of models) { const value = String((item && (item.id || item.name || item.value)) || "").trim(); if (!value) { continue; } if (credential.provider === "antigravity") { const group = antigravityModelGroup(value); if (!group) { continue; } choices.push({ value, label: (group === "gemini" ? "Gemini" : "Claude/GPT") + " · " + value, group }); } else { choices.push({ value, label: "Codex · " + value }); } } return choices; }
 	    function antigravityModelGroup(model) { const lower = String(model || "").toLowerCase(); if (lower.includes("gemini")) { return "gemini"; } if (lower.includes("claude") || lower.includes("gpt")) { return "claude_gpt"; } return ""; }
 	    function switchTab(tab) {

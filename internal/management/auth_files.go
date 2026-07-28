@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"quota-activation/internal/detector"
@@ -58,9 +59,12 @@ func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) 
 		writeError(w, http.StatusInternalServerError, "auth_files_failed", err.Error())
 		return
 	}
-	choices := make([]authFileChoice, 0, len(files))
-	for _, file := range files {
-		choice, ok := h.authFileChoice(file)
+	resolved := h.resolveAuthFiles(request.Context(), files)
+	choices := make([]authFileChoice, 0, len(resolved))
+	// 同 provider 的模型列表模板可复用，避免每个凭证重复构造。
+	modelCache := map[string][]modelChoice{}
+	for _, file := range resolved {
+		choice, ok := h.authFileChoice(file, modelCache)
 		if ok {
 			choices = append(choices, choice)
 		}
@@ -68,13 +72,48 @@ func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) 
 	writeJSON(w, http.StatusOK, authFilesResponse{Files: choices})
 }
 
-func (h *Handler) authFileChoice(file host.AuthFile) (authFileChoice, bool) {
-	runtimeFile := file
-	if file.AuthIndex != "" && h.host != nil {
-		if resolved, err := h.host.GetRuntimeAuthFile(context.Background(), file.AuthIndex); err == nil {
-			runtimeFile = mergeRuntimeAuthFile(file, resolved)
-		}
+// resolveAuthFiles 有限并发拉取 runtime，降低凭证很多时 auth-files 接口串行等待。
+func (h *Handler) resolveAuthFiles(ctx context.Context, files []host.AuthFile) []host.AuthFile {
+	if h.host == nil || len(files) == 0 {
+		return files
 	}
+	resolved := make([]host.AuthFile, len(files))
+	type job struct {
+		index int
+		file  host.AuthFile
+	}
+	jobs := make(chan job)
+	const workers = 8
+	var wg sync.WaitGroup
+	workerCount := workers
+	if len(files) < workerCount {
+		workerCount = len(files)
+	}
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range jobs {
+				runtimeFile := item.file
+				if item.file.AuthIndex != "" {
+					if runtime, err := h.host.GetRuntimeAuthFile(ctx, item.file.AuthIndex); err == nil {
+						runtimeFile = mergeRuntimeAuthFile(item.file, runtime)
+					}
+				}
+				resolved[item.index] = runtimeFile
+			}
+		}()
+	}
+	for index, file := range files {
+		jobs <- job{index: index, file: file}
+	}
+	close(jobs)
+	wg.Wait()
+	return resolved
+}
+
+func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]modelChoice) (authFileChoice, bool) {
+	runtimeFile := file
 	document := decodeAuthFile(file)
 	authID := firstNonBlank(runtimeFile.ID, file.ID, runtimeFile.Name, file.Name, document.Name, runtimeFile.AuthIndex, file.AuthIndex, document.AuthID, document.AuthIDUpper, document.ID)
 	label := firstNonBlank(runtimeFile.Account, runtimeFile.Email, file.Account, file.Email, document.Account, document.Email, document.Name, file.Name, authID)
@@ -83,7 +122,16 @@ func (h *Handler) authFileChoice(file host.AuthFile) (authFileChoice, bool) {
 		return authFileChoice{}, false
 	}
 	availableModels := append(runtimeAvailableModels(runtimeFile), document.availableModels()...)
-	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: h.modelChoices(provider, availableModels), QuotaPayload: h.quotaPayload(provider, availableModels)}, true
+	models := h.modelChoices(provider, availableModels)
+	if modelCache != nil {
+		cacheKey := provider + "\x00" + strings.Join(availableModels, "\x00")
+		if cached, ok := modelCache[cacheKey]; ok {
+			models = cached
+		} else {
+			modelCache[cacheKey] = models
+		}
+	}
+	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: models, QuotaPayload: h.quotaPayload(provider, availableModels)}, true
 }
 
 func mergeRuntimeAuthFile(base host.AuthFile, runtime host.AuthFile) host.AuthFile {
