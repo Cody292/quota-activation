@@ -56,6 +56,11 @@ func parseYAMLLine(line string) (yamlLine, bool, error) {
 	if trimmed == "" || strings.HasPrefix(trimmed, "#") {
 		return yamlLine{}, false, nil
 	}
+	// 宿主商店安装会把 store.tags 等序列写入 config_yaml（如 `- quota`）。
+	// 文档约定：enabled/priority 外字段原样传入；插件只需解析自有键，列表项应忽略而非 fail-closed。
+	if strings.HasPrefix(trimmed, "-") {
+		return yamlLine{}, false, nil
+	}
 	key, value, ok := strings.Cut(trimmed, ":")
 	if !ok {
 		return yamlLine{}, false, fmt.Errorf("must use key: value syntax in line: %s", trimmed)
