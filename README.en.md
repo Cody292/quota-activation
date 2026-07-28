@@ -8,8 +8,6 @@
 
 Quota Activation is a CLIProxyAPI (CPA) plugin for quota-reset activation. The plugin ID, dynamic library basename, and CPA configuration key are all `quota-activation`.
 
-Current version: `v0.0.1`
-
 ## Navigation
 
 - [Overview](#overview)
@@ -115,7 +113,6 @@ plugins:
 Notes:
 
 - Unit-suffixed Go durations such as `45m`, `2h`, and `90s` are still accepted.
-- Removed and ignored: `max_probe_interval`, `min_probe_interval`.
 
 ## Management Page and API
 

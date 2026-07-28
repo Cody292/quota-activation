@@ -8,8 +8,6 @@
 
 CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配置键均为 `quota-activation`。
 
-当前版本：`v0.0.1`
-
 ## 导航
 
 - [功能概览](#功能概览)
@@ -119,7 +117,6 @@ plugins:
 说明：
 
 - 仍可写带单位的 Go duration（如 `45m`、`2h`、`90s`）。
-- 已废弃并忽略：`max_probe_interval`、`min_probe_interval`。
 
 ## 管理页面与接口
 
