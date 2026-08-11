@@ -45,12 +45,14 @@ func (a *Activator) initialResult(request Request) Result {
 		observedAt = a.now().UTC()
 	}
 	return Result{
-		AuthID:     request.AuthID,
-		Provider:   string(request.Provider),
-		Window:     string(request.Window),
-		CycleKey:   request.CycleKey.String(),
-		Status:     StatusFailed,
-		ObservedAt: observedAt.UTC(),
-		ResetAt:    request.ResetAt.UTC(),
+		AuthID:       request.AuthID,
+		Provider:     string(request.Provider),
+		Window:       string(request.Window),
+		CycleKey:     request.CycleKey.String(),
+		Status:       StatusFailed,
+		ObservedAt:   observedAt.UTC(),
+		ResetAt:      request.ResetAt.UTC(),
+		Remaining:    request.Remaining,
+		HasRemaining: request.HasRemaining,
 	}
 }

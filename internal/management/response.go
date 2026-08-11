@@ -28,6 +28,7 @@ type activationResponse struct {
 	Routes           []Route           `json:"routes,omitempty"`
 	Resources        []Resource        `json:"resources,omitempty"`
 	Config           *diagnosticConfig `json:"config,omitempty"`
+	RunHistory       any               `json:"run_history,omitempty"`
 }
 
 type diagnosticConfig struct {

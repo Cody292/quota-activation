@@ -79,10 +79,20 @@ type ProbeInput struct {
 
 // ProbeObservation 是从 quota payload 中解析出的脱敏周期证据。
 type ProbeObservation struct {
-	Provider   Provider
-	ModelGroup ModelGroup
-	Window     Window
-	ResetAt    time.Time
+	Provider     Provider
+	ModelGroup   ModelGroup
+	Window       Window
+	ResetAt      time.Time
+	Remaining    int64 // 当前窗口 remaining；仅当 HasRemaining 时有效
+	HasRemaining bool  // payload 是否解析到 remaining（或可推断的耗尽）
+}
+
+// PreviousState 是上次成功激活时的周期状态，用于同 CycleKey 下的 remaining 恢复判定。
+// CycleKey 仍不含 remaining；HasRemaining=false 时仅按 CycleKey 去重（兼容旧调用方）。
+type PreviousState struct {
+	CycleKey     string
+	Remaining    int64
+	HasRemaining bool
 }
 
 // Decision 是一次周期判定的安全输出。
@@ -105,11 +115,15 @@ type quotaWindow struct {
 	Bucket             any `json:"bucket"`
 	Scope              any `json:"scope"`
 	ResetTime          any `json:"resetTime"`
+	Remaining          any `json:"remaining"`
+	UsedPercent        any `json:"used_percent"`
 }
 
 type parsedCycle struct {
-	provider   Provider
-	modelGroup ModelGroup
-	window     Window
-	resetAt    time.Time
+	provider     Provider
+	modelGroup   ModelGroup
+	window       Window
+	resetAt      time.Time
+	remaining    int64
+	hasRemaining bool
 }

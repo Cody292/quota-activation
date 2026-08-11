@@ -15,6 +15,8 @@ type codexQuota struct {
 	Label              any            `json:"label"`
 	Bucket             any            `json:"bucket"`
 	Scope              any            `json:"scope"`
+	Remaining          any            `json:"remaining"`
+	UsedPercent        any            `json:"used_percent"`
 	RateLimit          codexRateLimit `json:"rate_limit"`
 }
 
@@ -29,7 +31,19 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 		return parsedCycle{}, err
 	}
 	windows := []quotaWindow{
-		{ResetAt: quota.ResetAt, ResetAfterSeconds: quota.ResetAfterSeconds, LimitWindowSeconds: quota.LimitWindowSeconds, Name: quota.Name, Type: quota.Type, Category: quota.Category, Label: quota.Label, Bucket: quota.Bucket, Scope: quota.Scope},
+		{
+			ResetAt:            quota.ResetAt,
+			ResetAfterSeconds:  quota.ResetAfterSeconds,
+			LimitWindowSeconds: quota.LimitWindowSeconds,
+			Name:               quota.Name,
+			Type:               quota.Type,
+			Category:           quota.Category,
+			Label:              quota.Label,
+			Bucket:             quota.Bucket,
+			Scope:              quota.Scope,
+			Remaining:          quota.Remaining,
+			UsedPercent:        quota.UsedPercent,
+		},
 		quota.RateLimit.PrimaryWindow,
 		quota.RateLimit.SecondaryWindow,
 	}
@@ -47,7 +61,14 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 		}
 		rank := windowPreference(cycleWindow)
 		if rank > bestRank {
-			best = parsedCycle{provider: ProviderCodex, window: cycleWindow, resetAt: resetAt}
+			remaining, hasRemaining := extractRemaining(window)
+			best = parsedCycle{
+				provider:     ProviderCodex,
+				window:       cycleWindow,
+				resetAt:      resetAt,
+				remaining:    remaining,
+				hasRemaining: hasRemaining,
+			}
 			bestRank = rank
 		}
 	}
@@ -55,4 +76,15 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 		return parsedCycle{}, fmt.Errorf("codex reset_at: %w", ErrUnknownQuota)
 	}
 	return best, nil
+}
+
+// extractRemaining 从窗口解析 remaining；优先 remaining 字段，否则 used_percent>=100 视为耗尽。
+func extractRemaining(window quotaWindow) (int64, bool) {
+	if remaining, ok := toInt64(window.Remaining); ok {
+		return remaining, true
+	}
+	if pct, ok := toFloat64(window.UsedPercent); ok && pct >= 100 {
+		return 0, true
+	}
+	return 0, false
 }

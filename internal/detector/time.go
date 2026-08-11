@@ -78,3 +78,18 @@ func toInt64(raw any) (int64, bool) {
 		return 0, false
 	}
 }
+
+func toFloat64(raw any) (float64, bool) {
+	switch value := raw.(type) {
+	case float64:
+		return value, true
+	case json.Number:
+		f, err := value.Float64()
+		return f, err == nil
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}

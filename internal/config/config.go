@@ -73,7 +73,9 @@ type rawAntigravityModelsGroup struct {
 	EnableClaudeGPT *bool   `json:"enable_claude_gpt"`
 }
 
-// Default 返回除唤醒模型外的稳定默认配置。
+// Default 返回稳定默认配置。
+// AutoActivate 默认 false（README 强制：手动唤醒为默认）；EnableBeforeActivation 默认 true，
+// 使 disabled Free 可进入 auto 候选并由 activator 启用；Codex 默认模型 gpt-5-mini。
 func Default() Config {
 	return Config{
 		AutoActivate:             false,
@@ -82,8 +84,10 @@ func Default() Config {
 		MaxConcurrency:           1,
 		ActivationPrompt:         "quota activation ping",
 		StatePath:                "quota-activation/state.json",
-		EnableBeforeActivation:   false,
-		ActivationModels:         ActivationModels{},
+		EnableBeforeActivation:   true,
+		ActivationModels: ActivationModels{
+			Codex: CodexActivationModels{Models: "gpt-5-mini"},
+		},
 	}
 }
 

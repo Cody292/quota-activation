@@ -36,15 +36,18 @@ type RecordKey struct {
 }
 
 // Record 是 quota activation 调度和管理接口可复用的脱敏状态记录。
+// Remaining/HasRemaining 为可选字段（omitempty），旧 schema 文件无此字段时 HasRemaining=false。
 type Record struct {
-	AuthID     string    `json:"auth_id"`
-	Provider   string    `json:"provider"`
-	Window     string    `json:"window"`
-	CycleKey   string    `json:"cycle_key"`
-	ObservedAt time.Time `json:"observed_at"`
-	ResetAt    time.Time `json:"reset_at"`
-	LastResult string    `json:"last_result"`
-	LastError  string    `json:"last_error"`
+	AuthID       string    `json:"auth_id"`
+	Provider     string    `json:"provider"`
+	Window       string    `json:"window"`
+	CycleKey     string    `json:"cycle_key"`
+	ObservedAt   time.Time `json:"observed_at"`
+	ResetAt      time.Time `json:"reset_at"`
+	LastResult   string    `json:"last_result"`
+	LastError    string    `json:"last_error"`
+	Remaining    int64     `json:"remaining,omitempty"`
+	HasRemaining bool      `json:"has_remaining,omitempty"`
 }
 
 // Document 是状态文件的 JSON 顶层结构。
@@ -112,7 +115,7 @@ func (s *Store) Record(key RecordKey) (Record, bool) {
 }
 
 // LatestSuccess 返回同 auth_id+provider 下最近一次 success 记录（按 ObservedAt，其次 ResetAt）。
-// 供自动唤醒在无真实 quota_payload 时推断计量窗口。
+// 供自动唤醒在无真实 quota_payload 时推断计量窗口，以及 Evaluate previous remaining 恢复判定。
 func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
 	if s == nil {
 		return Record{}, false
@@ -142,6 +145,21 @@ func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
 		}
 	}
 	return best, found
+}
+
+// LatestSuccessCycle 返回最近一次 success 的 cycle key 与 remaining 快照（只读 helper）。
+// 无 success 时 ok=false。HasRemaining 兼容 omitempty：若标记为 false 但 Remaining!=0，
+// 仍视为已写入 remaining（旧记录/序列化丢失 has_remaining 时避免恢复路径失效）。
+func (s *Store) LatestSuccessCycle(authID string, provider string) (cycleKey string, remaining int64, hasRemaining bool, ok bool) {
+	record, found := s.LatestSuccess(authID, provider)
+	if !found {
+		return "", 0, false, false
+	}
+	hasRemaining = record.HasRemaining
+	if !hasRemaining && record.Remaining != 0 {
+		hasRemaining = true
+	}
+	return record.CycleKey, record.Remaining, hasRemaining, true
 }
 
 // SaveAtomic 使用同目录临时文件加 rename 原子写入状态 JSON。
@@ -215,14 +233,16 @@ func redactKey(key RecordKey) RecordKey {
 
 func redactRecord(record Record) Record {
 	return Record{
-		AuthID:     Redact(record.AuthID),
-		Provider:   Redact(record.Provider),
-		Window:     Redact(record.Window),
-		CycleKey:   Redact(record.CycleKey),
-		ObservedAt: record.ObservedAt.UTC(),
-		ResetAt:    record.ResetAt.UTC(),
-		LastResult: Redact(record.LastResult),
-		LastError:  Redact(record.LastError),
+		AuthID:       Redact(record.AuthID),
+		Provider:     Redact(record.Provider),
+		Window:       Redact(record.Window),
+		CycleKey:     Redact(record.CycleKey),
+		ObservedAt:   record.ObservedAt.UTC(),
+		ResetAt:      record.ResetAt.UTC(),
+		LastResult:   Redact(record.LastResult),
+		LastError:    Redact(record.LastError),
+		Remaining:    record.Remaining,
+		HasRemaining: record.HasRemaining,
 	}
 }
 

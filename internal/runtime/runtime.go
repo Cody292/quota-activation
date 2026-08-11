@@ -29,7 +29,14 @@ type Runtime struct {
 	autoCancel       context.CancelFunc
 	autoScan         func(context.Context)
 	autoScanInterval time.Duration
-	shutdown         bool
+	// lastAutoScanAt 最近一次实际执行 auto scan 的时间（mu 保护）；门闩强制遵守 ScanInterval。
+	lastAutoScanAt time.Time
+	// schedulerMissUntil 记录可冷却失败（调度未选中 / 宿主执行器不可用）的 per-auth 截止时间。
+	schedulerMissUntil map[string]time.Time
+	// activateCooldownReasonByAuth 冷却 skip 原因（与 schedulerMissUntil 同步）。
+	activateCooldownReasonByAuth map[string]string
+	runHistory                   []RunHistoryEntry
+	shutdown                     bool
 }
 
 // New 创建未注册 runtime；首次 register/reconfigure 成功后才启用依赖。
@@ -119,20 +126,34 @@ func (r *Runtime) replaceConfig(ctx context.Context, cfg config.Config) error {
 	}
 	sessions := session.NewManager(session.Options{Now: r.now})
 	activation := activator.New(activator.Options{Host: r.host, Sessions: sessions, State: store, Config: cfg, Now: r.now})
-	manager := management.NewHandler(management.Options{Activator: activation, Host: r.host, Config: cfg, Now: r.now})
+	// 闭包捕获 Runtime：手动激活写 run_history，diagnostics 读 run_history。
+	manager := management.NewHandler(management.Options{
+		Activator: activation,
+		Host:      r.host,
+		Config:    cfg,
+		Now:       r.now,
+		OnActivation: func(result activator.Result, err error) {
+			r.snapshotActivation(runHistoryTriggerManual, result, err)
+		},
+		RunHistory: func() any {
+			return r.currentRunHistory()
+		},
+	})
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.shutdown {
 		return ErrShutdown
 	}
-	r.stopAutoScannerLocked()
 	r.config = cfg
 	r.sessions = sessions
 	r.store = store
 	r.activator = activation
 	r.management = manager
 	r.picker = scheduler.NewPicker(sessions)
-	if cfg.AutoActivate {
+	// reconfigure 防抖：AutoActivate 仍 true 且 interval 未变时不 stop+start，避免 immediate 首扫狂刷。
+	if !cfg.AutoActivate {
+		r.stopAutoScannerLocked()
+	} else {
 		r.startAutoScannerLocked(cfg.ScanInterval)
 	}
 	return nil
@@ -142,6 +163,11 @@ func (r *Runtime) startAutoScannerLocked(interval time.Duration) {
 	if interval <= 0 {
 		interval = config.Default().ScanInterval
 	}
+	// 已在跑且 interval 相同 → no-op（宿主频繁 reconfigure 的主路径）。
+	if r.autoCancel != nil && r.autoScanInterval == interval {
+		return
+	}
+	r.stopAutoScannerLocked()
 	ctx, cancel := context.WithCancel(context.Background())
 	r.autoCancel = cancel
 	r.autoScanInterval = interval
@@ -162,7 +188,7 @@ func registrationResult() RegisterResult {
 		SchemaVersion: 1,
 		Metadata: Metadata{
 			Name:             "quota-activation",
-			Version:          "0.0.3",
+			Version:          "0.0.4",
 			Author:           "Cody292",
 			GitHubRepository: "https://github.com/Cody292/quota-activation",
 			Description:      "Quota reset activation management API and scheduler helper for Codex and Antigravity.",
@@ -178,8 +204,8 @@ func configFields() []ConfigField {
 		{Name: "activation_models.codex.models", Type: "string", Description: localizedDescription("Codex 自动唤醒使用的模型名称。", "Model name used for Codex automatic activation."), DefaultValue: defaults.ActivationModels.Codex.Models},
 		{Name: "activation_models.antigravity.models_group", Type: "string", Description: localizedDescription("Antigravity 自动唤醒使用的模型组。", "Model group used for Antigravity automatic activation."), EnumValues: []string{"gemini", "claude_gpt"}, DefaultValue: defaults.ActivationModels.Antigravity.ModelsGroup},
 		{Name: "activation_models.antigravity.models", Type: "string", Description: localizedDescription("当前 Antigravity 模型组自动唤醒使用的模型名称。", "Model name used for the selected Antigravity model group."), DefaultValue: defaults.ActivationModels.Antigravity.Models},
-		{Name: "auto_activate", Type: "boolean", Description: localizedDescription("启用调度器自动配额唤醒；默认 false，因此手动唤醒仍是默认方式。", "Enable scheduler-driven automatic quota activation; default is false, so manual activation remains the default."), DefaultValue: defaults.AutoActivate},
-		{Name: "enable_before_activation", Type: "boolean", Description: localizedDescription("显式为 true 时，达到唤醒条件后自动启用已禁用凭证并保持启用。", "When explicitly true, automatically enable disabled credentials that meet activation conditions and keep them enabled."), DefaultValue: defaults.EnableBeforeActivation},
+		{Name: "auto_activate", Type: "boolean", Description: localizedDescription("启用调度器自动配额唤醒；默认 false，因此手动唤醒仍是默认方式。未启用时执行记录不会出现 auto scan 摘要。", "Enable scheduler-driven automatic quota activation; default is false, so manual activation remains the default. When disabled, no auto scan summary appears in run history."), DefaultValue: defaults.AutoActivate},
+		{Name: "enable_before_activation", Type: "boolean", Description: localizedDescription("默认 true：达到唤醒条件后自动启用已禁用凭证并保持启用；显式 false 时候选阶段丢弃 disabled。", "Default true: automatically enable disabled credentials that meet activation conditions and keep them enabled; explicit false drops them at candidate stage."), DefaultValue: defaults.EnableBeforeActivation},
 		{Name: "scan_interval", Type: "string", Description: localizedDescription("自动扫描间隔（单位：分钟）。填写纯数字即可，无需带单位；默认 30。", "Automatic scan interval in minutes. Enter a plain number without a unit; default is 30."), DefaultValue: formatDurationMinutes(defaults.ScanInterval)},
 		{Name: "activation_request_timeout", Type: "string", Description: localizedDescription("唤醒模型请求超时（单位：秒）。填写纯数字即可，无需带单位；默认 60。", "Activation model request timeout in seconds. Enter a plain number without a unit; default is 60."), DefaultValue: formatDurationSeconds(defaults.ActivationRequestTimeout)},
 		{Name: "max_concurrency", Type: "integer", Description: localizedDescription("最大并发唤醒请求数；当前流程预期为 1。", "Maximum concurrent activation requests; the current workflow expects 1."), DefaultValue: defaults.MaxConcurrency},

@@ -17,7 +17,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
   <style>
     :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     body { margin: 0; background: #f8fafc; color: #111827; }
-    main { max-width: 760px; margin: 0 auto; padding: 48px 24px; }
+    main { max-width: 1200px; margin: 0 auto; padding: 48px 24px; }
     section { position: relative; background: #fff; border: 1px solid #e5e7eb; border-radius: 16px; padding: 24px; box-shadow: 0 12px 30px rgba(15, 23, 42, .08); }
     h1 { margin: 0; font-size: 24px; white-space: nowrap; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .version-badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 3px 9px; background: #eff6ff; color: #1d4ed8; font-size: 12px; font-weight: 750; letter-spacing: 0; }
@@ -72,6 +72,34 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
     .help-content ul { padding-left: 20px; margin-bottom: 16px; }
     .help-content li { margin-bottom: 6px; }
     .help-content pre { background: #f3f4f6; padding: 12px; border-radius: 8px; overflow-x: auto; font-family: monospace; font-size: 14px; margin: 8px 0; }
+
+    .records-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .records-header-text h3 { margin: 0; font-size: 16px; color: #111827; }
+    .records-hint { font-size: 13px; color: #6b7280; margin: 4px 0 0; }
+    .records-list { display: grid; gap: 12px; }
+    .record-card { background: #fff; border: 1px solid rgba(17,24,39,.06); border-radius: 14px; padding: 14px 16px; display: grid; gap: 10px; }
+    .record-card.warn { border-color: rgba(217,119,6,.25); background: #fffbeb; }
+    .record-card.fail { border-color: rgba(220,38,38,.18); background: #fef2f2; }
+    .record-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+    .record-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .record-time { font-size: 12px; color: #6b7280; font-weight: 600; }
+    .record-badge { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 650; }
+    .record-badge.manual { background: #eff6ff; color: #1d4ed8; }
+    .record-badge.auto { background: #ecfdf5; color: #047857; }
+    .record-badge.scan { background: #f3e8ff; color: #6d28d9; }
+    .record-stats { display: flex; flex-wrap: wrap; gap: 8px; }
+    .record-stat { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 4px 10px; background: #f8fafc; border: 1px solid #e5e7eb; font-size: 12px; font-weight: 650; color: #374151; }
+    .record-providers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .record-provider { display: grid; gap: 4px; padding: 10px 12px; border-radius: 12px; background: #f8fafc; border: 1px solid rgba(17,24,39,.04); min-width: 0; }
+    .record-provider strong { font-size: 13px; color: #111827; }
+    .record-provider span { font-size: 12px; color: #6b7280; }
+    .record-provider .prov-err { color: #dc2626; }
+    .record-provider .prov-warn { color: #b45309; }
+    .record-message { font-size: 13px; word-break: break-word; line-height: 1.5; }
+    .record-message.error { color: #dc2626; }
+    .record-message.warn { color: #b45309; }
+    .empty-state { text-align: center; padding: 24px 12px; color: #9ca3af; font-size: 14px; }
+    @media (max-width: 720px) { .record-providers { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
@@ -83,7 +111,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.3</span></h1>
+	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.4</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -104,6 +132,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 
 	        <div class="tabs">
 	          <button id="manualTabButton" class="tab-button active" onclick="switchTab('manual')" data-i18n="manualTab">手动唤醒</button>
+	          <button id="recordsTabButton" class="tab-button" onclick="switchTab('records')" data-i18n="recordsTab">执行记录</button>
 	          <button id="helpTabButton" class="tab-button" onclick="switchTab('help')" data-i18n="helpTab">帮助</button>
 	        </div>
 
@@ -123,6 +152,17 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	            <button id="refreshCredentialsButton" type="button" class="secondary" data-i18n="refresh" onclick="loadAuthFiles(this)">刷新凭证</button>
 	            <button id="manualActivateButton" type="button" data-i18n="activate" onclick="triggerActivation(this)">手动触发唤醒</button>
 	          </div>
+	        </div>
+
+	        <div id="recordsPanel" class="tab-panel">
+	          <div class="records-header">
+	            <div class="records-header-text">
+	              <h3 data-i18n="recordsTitle">执行记录</h3>
+	              <p class="records-hint" data-i18n="recordsHint">进程内最近 5 次（重启清空）</p>
+	            </div>
+	            <button id="refreshRecordsButton" type="button" class="secondary" data-i18n="refreshRecords" onclick="loadRunHistory(this)">刷新记录</button>
+	          </div>
+	          <div id="recordsList" class="records-list"></div>
 	        </div>
 
 	        <div id="helpPanel" class="tab-panel">
@@ -154,6 +194,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    const AUTH_FILES_PATH = "/v0/management/quota-activation/auth-files";
 	    const AUTH_FILE_MODELS_PATH = "/v0/management/auth-files/models";
 	    const ACTIVATE_PATH = "/v0/management/quota-activation/activate";
+	    const DIAGNOSTICS_PATH = "/v0/management/quota-activation/diagnostics";
 	    const translations = {
 	      "zh-CN": {
 	        activate: "手动触发唤醒",
@@ -198,7 +239,24 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpActivationPrompt: "可选；唤醒提示词。",
 	        helpCodexModels: "Codex 自动唤醒模型名称，例如 gpt-5-mini。",
 	        helpAntigravityGroup: "Antigravity 自动唤醒模型组，可选 gemini 或 claude_gpt。",
-	        helpAntigravityModels: "当前 Antigravity 模型组的模型名称。"
+	        helpAntigravityModels: "当前 Antigravity 模型组的模型名称。",
+	        recordsTab: "执行记录",
+	        recordsTitle: "执行记录",
+	        recordsHint: "进程内最近 5 次（重启清空）",
+	        refreshRecords: "刷新记录",
+	        noRecords: "暂无执行记录",
+	        noRecordsAutoOff: "自动唤醒未启用。请在配置中将 auto_activate 设为 true；开启后每次扫描会写入摘要，也可手动唤醒产生记录。",
+	        triggerManual: "手动唤醒",
+	        triggerAuto: "自动唤醒",
+	        kindScan: "定时扫描",
+	        kindActivationAuto: "自动唤醒",
+	        kindActivationManual: "手动唤醒",
+	        providerBreakdown: "按凭证提供商",
+	        statAttempted: "尝试",
+	        statSucceeded: "成功",
+	        statFailed: "失败",
+	        statSkipped: "跳过",
+	        loadingRecords: "刷新中..."
 	      },
 	      "en-US": {
 	        activate: "Trigger activation",
@@ -243,7 +301,24 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpActivationPrompt: "Optional; activation prompt text.",
 	        helpCodexModels: "Codex automatic activation model name, for example gpt-5-mini.",
 	        helpAntigravityGroup: "Antigravity automatic activation model group: gemini or claude_gpt.",
-	        helpAntigravityModels: "Model name for the current Antigravity model group."
+	        helpAntigravityModels: "Model name for the current Antigravity model group.",
+	        recordsTab: "Execution Records",
+	        recordsTitle: "Execution Records",
+	        recordsHint: "Last 5 runs in process (cleared on restart)",
+	        refreshRecords: "Refresh records",
+	        noRecords: "No execution records",
+	        noRecordsAutoOff: "Auto activation is off. Set auto_activate to true in config; each scan tick will be recorded, and manual activation also writes records.",
+	        triggerManual: "Manual activation",
+	        triggerAuto: "Auto activation",
+	        kindScan: "Scheduled scan",
+	        kindActivationAuto: "Auto activation",
+	        kindActivationManual: "Manual activation",
+	        providerBreakdown: "By provider",
+	        statAttempted: "Attempted",
+	        statSucceeded: "Succeeded",
+	        statFailed: "Failed",
+	        statSkipped: "Skipped",
+	        loadingRecords: "Refreshing..."
 	      }
 	    };
 	    let language = "zh-CN";
@@ -253,7 +328,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    function textFor(key) { return translations[language][key] || translations["zh-CN"][key] || key; }
 	    function message(text) { const toast = document.getElementById("managementToast"); toast.textContent = text; if (toastTimer) { clearTimeout(toastTimer); } if (text) { toastTimer = setTimeout(() => { toast.textContent = ""; toastTimer = 0; }, 2500); } else { toastTimer = 0; } }
 	    function managementKey() { const key = document.getElementById("managementKey").value.trim(); if (!key) { message(textFor("missingKey")); } return key; }
-	    function applyLanguage() { document.documentElement.lang = language; document.querySelectorAll("[data-i18n]").forEach((item) => { item.textContent = textFor(item.dataset.i18n); }); document.querySelectorAll("[data-i18n-placeholder]").forEach((item) => { item.placeholder = textFor(item.dataset.i18nPlaceholder); }); renderAuthFiles(); }
+	    function applyLanguage() { document.documentElement.lang = language; document.querySelectorAll("[data-i18n]").forEach((item) => { item.textContent = textFor(item.dataset.i18n); }); document.querySelectorAll("[data-i18n-placeholder]").forEach((item) => { item.placeholder = textFor(item.dataset.i18nPlaceholder); }); renderAuthFiles(); renderRunHistory(); }
 	    function switchLanguage() { language = language === "zh-CN" ? "en-US" : "zh-CN"; applyLanguage(); message(""); }
 	    function shortError(defaultKey) { return textFor(defaultKey); }
 	    function setButtonBusy(control, labelKey) { if (!control) { return null; } const state = { control, labelKey: control.dataset.i18n || "", text: control.textContent }; control.disabled = true; control.textContent = textFor(labelKey); return state; }
@@ -337,9 +412,14 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    function antigravityModelGroup(model) { const lower = String(model || "").toLowerCase(); if (lower.includes("gemini")) { return "gemini"; } if (lower.includes("claude") || lower.includes("gpt")) { return "claude_gpt"; } return ""; }
 	    function switchTab(tab) {
 	      document.getElementById("manualTabButton").classList.toggle("active", tab === "manual");
+	      document.getElementById("recordsTabButton").classList.toggle("active", tab === "records");
 	      document.getElementById("helpTabButton").classList.toggle("active", tab === "help");
 	      document.getElementById("manualPanel").classList.toggle("active", tab === "manual");
+	      document.getElementById("recordsPanel").classList.toggle("active", tab === "records");
 	      document.getElementById("helpPanel").classList.toggle("active", tab === "help");
+	      if (tab === "records") {
+	        loadRunHistory();
+	      }
 	    }
 	    function providerLabel(key) {
 	      if (key === "antigravity") return "Antigravity";
@@ -565,6 +645,198 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        if (refBtn) {
 	          refBtn.disabled = refBtnDisabledState;
 	        }
+	      }
+	    }
+	    let runHistory = [];
+	    let autoActivateEnabled = null;
+	    async function loadRunHistory(button) {
+	      const btnState = setButtonBusy(button, "loadingRecords");
+	      try {
+	        const result = await managementFetch(DIAGNOSTICS_PATH, { method: "GET" });
+	        if (!result) { return; }
+	        runHistory = Array.isArray(result.run_history) ? result.run_history : [];
+	        autoActivateEnabled = result.config && typeof result.config.auto_activate === "boolean"
+	          ? result.config.auto_activate
+	          : null;
+	        renderRunHistory();
+	      } catch (error) {
+	        message(activationErrorMessage(error));
+	      } finally {
+	        restoreButton(btnState);
+	      }
+	    }
+	    function formatTime(isoStr) {
+	      if (!isoStr) return "—";
+	      try {
+	        const d = new Date(isoStr);
+	        if (isNaN(d.getTime())) return isoStr;
+	        return d.toLocaleString(language === "zh-CN" ? "zh-CN" : "en-US", {
+	          year: "numeric", month: "2-digit", day: "2-digit",
+	          hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false
+	        });
+	      } catch (_) {
+	        return isoStr;
+	      }
+	    }
+	    function summarySeparator() { return language === "zh-CN" ? "：" : ": "; }
+	    function kindLabel(item) {
+	      const kind = String(item && item.kind || "").toLowerCase();
+	      const trigger = String(item && item.trigger || "").toLowerCase();
+	      // 合并后 auto tick 为 kind=scan trigger=auto；旧数据 kind=activation trigger=auto 仍兼容展示。
+	      if (kind === "scan" || (kind === "activation" && trigger === "auto")) { return textFor("kindScan"); }
+	      if (trigger === "auto") { return textFor("kindActivationAuto"); }
+	      return textFor("kindActivationManual");
+	    }
+	    function kindBadgeClass(item) {
+	      const kind = String(item && item.kind || "").toLowerCase();
+	      const trigger = String(item && item.trigger || "").toLowerCase();
+	      if (kind === "scan" || (kind === "activation" && trigger === "auto")) { return "scan"; }
+	      return trigger === "auto" ? "auto" : "manual";
+	    }
+	    function localizeRecordMessage(raw) {
+	      const msg = String(raw || "").trim();
+	      if (!msg) { return ""; }
+	      if (language !== "zh-CN") {
+	        if (/状态保存被中断|状态保存失败/.test(msg)) {
+	          return "Activation succeeded, but saving state was interrupted (internal timeout/cancel); credential is still valid";
+	        }
+	        if (msg.indexOf("调度器未选中目标凭证") >= 0) {
+	          return "Activation scheduler did not select target credential";
+	        }
+	        if (/宿主模型执行器不可用/.test(msg) || /host model executor is unavailable/i.test(msg) || (/host_call_failed/i.test(msg) && /executor/i.test(msg))) {
+	          return "Host model executor unavailable (host not ready or callback failed; not a credential failure)";
+	        }
+	        if (/定时扫描：/.test(msg)) {
+	          return msg.replace("定时扫描：", "Scheduled scan: ").replace(/尝试 /g, "attempted ").replace(/成功 /g, "succeeded ").replace(/失败 /g, "failed ").replace(/跳过 /g, "skipped ").replace(/；跳过：/, "; skip: ").replace(/；失败：/, "; fail: ").replace(/本周期已处理/g, "cycle already processed").replace(/执行中/g, "busy").replace(/宿主模型执行器不可用（已冷却）/g, "host model executor unavailable (cooled down)");
+	        }
+	        return msg;
+	      }
+	      const lower = msg.toLowerCase();
+	      if (lower.indexOf("save activation state") >= 0 || lower.indexOf("save state context") >= 0 || (lower.indexOf("context canceled") >= 0 || lower.indexOf("context cancelled") >= 0)) {
+	        return "唤醒已成功，但状态保存被中断（内部超时/取消），非凭证失效";
+	      }
+	      if (lower.indexOf("activation scheduler did not select target credential") >= 0) {
+	        return "调度器未选中目标凭证";
+	      }
+	      if (lower.indexOf("host model executor is unavailable") >= 0 || (lower.indexOf("host_call_failed") >= 0 && lower.indexOf("executor") >= 0) || (lower.indexOf("host callback host.model.execute") >= 0 && lower.indexOf("unavailable") >= 0)) {
+	        return "宿主模型执行器不可用（宿主未就绪或回调失败，非凭证失效）";
+	      }
+	      if (lower.indexOf("host model execute") >= 0 && lower.indexOf("unavailable") >= 0) {
+	        return "宿主模型执行器不可用（宿主未就绪或回调失败，非凭证失效）";
+	      }
+	      if (/auto scan tick attempted=/.test(msg)) {
+	        const m = msg.match(/attempted=(\d+)\s+succeeded=(\d+)\s+failed=(\d+)\s+skipped=(\d+)/i);
+	        let out = m ? ("定时扫描：尝试 " + m[1] + " · 成功 " + m[2] + " · 失败 " + m[3] + " · 跳过 " + m[4]) : msg;
+	        const skipPart = msg.split(/;\s*skip:\s*/i)[1];
+	        if (skipPart) {
+	          out += "；跳过：" + skipPart.replace(/quota 周期已处理/g, "本周期已处理").replace(/busy/gi, "执行中").replace(/×/g, " ×");
+	        }
+	        return out;
+	      }
+	      if (/^skip:\s*/i.test(msg)) {
+	        return msg.replace(/^skip:\s*/i, "跳过：").replace(/quota 周期已处理/g, "本周期已处理");
+	      }
+	      return msg;
+	    }
+	    function isWarningMessage(msg) {
+	      const text = String(msg || "");
+	      if (!text) { return false; }
+	      const lower = text.toLowerCase();
+	      return /状态保存|非凭证失效/.test(text) || lower.indexOf("save activation state") >= 0 || lower.indexOf("context canceled") >= 0 || lower.indexOf("context cancelled") >= 0 || lower.indexOf("interrupted") >= 0;
+	    }
+	    function recordTone(item) {
+	      const failed = Number(item && item.failed || 0);
+	      const succeeded = Number(item && item.succeeded || 0);
+	      const msg = localizeRecordMessage(item && item.message);
+	      if (failed > 0 && succeeded === 0) { return "fail"; }
+	      if (succeeded > 0 && (isWarningMessage(msg) || isWarningMessage(item && item.message))) { return "warn"; }
+	      if (failed > 0 && succeeded > 0) { return "warn"; }
+	      return "ok";
+	    }
+	    function providerDisplayName(name) {
+	      const raw = String(name || "").toLowerCase();
+	      if (raw === "antigravity") { return "Antigravity"; }
+	      if (raw === "codex") { return "Codex"; }
+	      if (raw === "xai" || raw === "x-ai") { return "xAI"; }
+	      return name || providerLabel("other");
+	    }
+	    function statPill(label, value) {
+	      const span = document.createElement("span");
+	      span.className = "record-stat";
+	      span.textContent = label + summarySeparator() + String(value == null ? 0 : value);
+	      return span;
+	    }
+	    function renderRunHistory() {
+	      const list = document.getElementById("recordsList");
+	      if (!list) { return; }
+	      list.innerHTML = "";
+	      if (!Array.isArray(runHistory) || runHistory.length === 0) {
+	        const empty = document.createElement("div");
+	        empty.className = "empty-state";
+	        empty.textContent = autoActivateEnabled === false ? textFor("noRecordsAutoOff") : textFor("noRecords");
+	        list.appendChild(empty);
+	        return;
+	      }
+	      for (const item of runHistory) {
+	        const tone = recordTone(item);
+	        const card = document.createElement("div");
+	        card.className = "record-card" + (tone === "ok" ? "" : (" " + tone));
+	        const head = document.createElement("div");
+	        head.className = "record-head";
+	        const meta = document.createElement("div");
+	        meta.className = "record-meta";
+	        const badge = document.createElement("span");
+	        badge.className = "record-badge " + kindBadgeClass(item);
+	        badge.textContent = kindLabel(item);
+	        const timeSpan = document.createElement("span");
+	        timeSpan.className = "record-time";
+	        timeSpan.textContent = formatTime(item.at);
+	        meta.appendChild(badge);
+	        meta.appendChild(timeSpan);
+	        head.appendChild(meta);
+	        card.appendChild(head);
+	        const stats = document.createElement("div");
+	        stats.className = "record-stats";
+	        stats.append(
+	          statPill(textFor("statSucceeded"), item.succeeded || 0),
+	          statPill(textFor("statFailed"), item.failed || 0),
+	          statPill(textFor("statSkipped"), item.skipped || 0)
+	        );
+	        card.appendChild(stats);
+	        if (Array.isArray(item.providers) && item.providers.length > 0) {
+	          const title = document.createElement("div");
+	          title.style.fontSize = "12px";
+	          title.style.color = "#6b7280";
+	          title.style.fontWeight = "650";
+	          title.textContent = textFor("providerBreakdown");
+	          card.appendChild(title);
+	          const provDiv = document.createElement("div");
+	          provDiv.className = "record-providers";
+	          for (const p of item.providers) {
+	            const row = document.createElement("div");
+	            row.className = "record-provider";
+	            const name = document.createElement("strong");
+	            name.textContent = providerDisplayName(p.name);
+	            row.appendChild(name);
+	            const line = document.createElement("span");
+	            line.textContent = [
+	              textFor("statSucceeded") + summarySeparator() + (p.succeeded || 0),
+	              textFor("statFailed") + summarySeparator() + (p.failed || 0),
+	              textFor("statSkipped") + summarySeparator() + (p.skipped || 0)
+	            ].join(" · ");
+	            row.appendChild(line);
+	            if (p.error) {
+	              const err = document.createElement("span");
+	              const mapped = localizeRecordMessage(p.error);
+	              err.className = isWarningMessage(mapped) || isWarningMessage(p.error) ? "prov-warn" : "prov-err";
+	              err.textContent = mapped;
+	              row.appendChild(err);
+	            }
+	            provDiv.appendChild(row);
+	          }
+	          card.appendChild(provDiv);
+	        }
+	        list.appendChild(card);
 	      }
 	    }
 	    document.addEventListener("click", (event) => {

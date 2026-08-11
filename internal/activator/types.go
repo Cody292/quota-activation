@@ -50,16 +50,18 @@ type Options struct {
 
 // Request 描述一次纯内部凭证激活请求。
 type Request struct {
-	AuthID     string
-	Provider   detector.Provider
-	ModelGroup detector.ModelGroup
-	Window     detector.Window
-	CycleKey   detector.CycleKey
-	Model      string
-	Prompt     string
-	Disabled   bool
-	ObservedAt time.Time
-	ResetAt    time.Time
+	AuthID       string
+	Provider     detector.Provider
+	ModelGroup   detector.ModelGroup
+	Window       detector.Window
+	CycleKey     detector.CycleKey
+	Model        string
+	Prompt       string
+	Disabled     bool
+	ObservedAt   time.Time
+	ResetAt      time.Time
+	Remaining    int64 // 可选：激活时观察到的 remaining，供 state 幂等/恢复
+	HasRemaining bool
 }
 
 // Result 是一次激活流程的脱敏结果。
@@ -77,4 +79,8 @@ type Result struct {
 	ObservedAt       time.Time `json:"observed_at"`
 	ResetAt          time.Time `json:"reset_at"`
 	LastError        string    `json:"last_error,omitempty"`
+	// Warning 表示主流程已成功时的非致命提示（如状态落盘被中断），不应把整条标为失败。
+	Warning      string `json:"warning,omitempty"`
+	Remaining    int64  `json:"remaining,omitempty"`
+	HasRemaining bool   `json:"has_remaining,omitempty"`
 }

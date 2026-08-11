@@ -20,6 +20,10 @@ type Options struct {
 	Host      host.Client
 	Config    config.Config
 	Now       func() time.Time
+	// OnActivation 在每次手动激活完成后回调（成功或失败均触发），用于写入 run_history。
+	OnActivation func(result activator.Result, err error)
+	// RunHistory 返回 diagnostics 内嵌的 run_history 数组（任意 JSON 可序列化切片）。
+	RunHistory func() any
 }
 
 // Route 描述管理 API 暴露的 HTTP 路由。
@@ -43,12 +47,14 @@ type Registration struct {
 
 // Handler 处理 quota-activation 的管理 API HTTP 请求。
 type Handler struct {
-	activator *activator.Activator
-	host      host.Client
-	config    config.Config
-	now       func() time.Time
-	mu        sync.RWMutex
-	latest    activationResponse
+	activator    *activator.Activator
+	host         host.Client
+	config       config.Config
+	now          func() time.Time
+	onActivation func(result activator.Result, err error)
+	runHistory   func() any
+	mu           sync.RWMutex
+	latest       activationResponse
 }
 
 // Register 返回 quota-activation 的管理 API 路由清单和插件资源页。
@@ -73,5 +79,12 @@ func NewHandler(options Options) *Handler {
 	if now == nil {
 		now = time.Now
 	}
-	return &Handler{activator: options.Activator, host: options.Host, config: options.Config, now: now}
+	return &Handler{
+		activator:    options.Activator,
+		host:         options.Host,
+		config:       options.Config,
+		now:          now,
+		onActivation: options.OnActivation,
+		runHistory:   options.RunHistory,
+	}
 }

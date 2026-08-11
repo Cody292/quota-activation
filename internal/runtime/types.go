@@ -60,3 +60,26 @@ type Metadata struct {
 type runtimeState struct {
 	Config config.Config
 }
+
+// RunHistoryEntry 是插件 diagnostics「执行记录」使用的结构化摘要（最近 N 次激活尝试）。
+type RunHistoryEntry struct {
+	At        time.Time            `json:"at"`
+	Kind      string               `json:"kind"`
+	Trigger   string               `json:"trigger"`
+	Attempted int                  `json:"attempted"`
+	Succeeded int                  `json:"succeeded"`
+	Failed    int                  `json:"failed"`
+	Skipped   int                  `json:"skipped"`
+	Providers []RunHistoryProvider `json:"providers,omitempty"`
+	Message   string               `json:"message,omitempty"`
+}
+
+// RunHistoryProvider 是单次激活尝试中某个提供商的计数。
+type RunHistoryProvider struct {
+	Name      string `json:"name"`
+	Attempted int    `json:"attempted"`
+	Succeeded int    `json:"succeeded"`
+	Failed    int    `json:"failed"`
+	Skipped   int    `json:"skipped"`
+	Error     string `json:"error,omitempty"`
+}

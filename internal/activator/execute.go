@@ -69,13 +69,13 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 	if !a.activationSessionConsumed(created.Nonce) {
 		result.Status = StatusFailed
 		result.Success = false
-		result.LastError = "activation scheduler did not select target credential"
+		result.LastError = "调度器未选中目标凭证"
 		return result, nil
 	}
 	if request.Provider == detector.ProviderAntigravity && !antigravityActivationSucceeded(checked) {
 		result.Status = StatusFailed
 		result.Success = false
-		result.LastError = "antigravity activation response missing choices"
+		result.LastError = "Antigravity 唤醒响应缺少 choices"
 		return result, nil
 	}
 	return result, nil

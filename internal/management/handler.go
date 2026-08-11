@@ -44,6 +44,9 @@ func (h *Handler) handleActivate(w http.ResponseWriter, request *http.Request) {
 		return
 	}
 	result, err := h.activator.Activate(request.Context(), activation)
+	if h.onActivation != nil {
+		h.onActivation(result, err)
+	}
 	response := responseFromResult(result)
 	if err != nil {
 		response.LastError = state.Redact(err.Error())
@@ -82,6 +85,11 @@ func (h *Handler) handleDiagnostics(w http.ResponseWriter) {
 			LastResult: response.Status,
 			LastError:  response.LastError,
 		}}
+	}
+	if h.runHistory != nil {
+		if history := h.runHistory(); history != nil {
+			response.RunHistory = history
+		}
 	}
 	writeJSON(w, http.StatusOK, response)
 }
