@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"quota-activation/internal/activator"
@@ -17,6 +18,12 @@ const schedulerMissCooldownReason = "调度未选中目标凭证（已冷却）"
 const schedulerMissErrorMessage = "调度器未选中目标凭证"
 const hostExecutorUnavailableCooldownReason = "宿主模型执行器不可用（已冷却）"
 const hostExecutorUnavailableMessage = "宿主模型执行器不可用（宿主未就绪或回调失败，非凭证失效）"
+
+// autoScanIntervalSlack 允许微早触发仍认领本轮，避免 timer 抖动静默丢 tick。
+const autoScanIntervalSlack = 2 * time.Second
+
+// autoScanStartupDelay 首轮 scan 前等待，给宿主 auth 索引就绪时间。
+const autoScanStartupDelay = 3 * time.Second
 
 type autoScanSnapshot struct {
 	host                       host.Client
@@ -38,17 +45,45 @@ type autoCandidate struct {
 }
 
 func (r *Runtime) runAutoScanLoop(ctx context.Context) {
-	r.scanAutoCandidates(ctx)
-	ticker := time.NewTicker(r.autoScannerInterval())
-	defer ticker.Stop()
+	if delay := r.firstScanDelay(); delay > 0 {
+		if !r.sleepCtx(ctx, delay) {
+			return
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			r.scanAutoCandidates(ctx)
+		default:
+		}
+		start := r.now()
+		r.scanAutoCandidates(ctx)
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		interval := r.autoScannerInterval()
+		elapsed := r.now().Sub(start)
+		wait := interval - elapsed
+		if wait > 0 {
+			if !r.sleepCtx(ctx, wait) {
+				return
+			}
 		}
 	}
+}
+
+func (r *Runtime) sleepCtx(ctx context.Context, d time.Duration) bool {
+	if r.sleep != nil {
+		return r.sleep(ctx, d)
+	}
+	return sleepWithContext(ctx, d)
+}
+
+func (r *Runtime) firstScanDelay() time.Duration {
+	if r != nil && r.startupDelay != nil {
+		return *r.startupDelay
+	}
+	return autoScanStartupDelay
 }
 
 func (r *Runtime) autoScannerInterval() time.Duration {
@@ -68,6 +103,8 @@ func (r *Runtime) scanAutoCandidates(ctx context.Context) {
 	if !r.claimAutoScanSlot() {
 		return
 	}
+	defer r.releaseAutoScanSlot()
+
 	files, err := snapshot.host.ListAuthFiles(ctx)
 	if err != nil {
 		r.snapshotScanSummary(scanSummaryInput{
@@ -76,26 +113,68 @@ func (r *Runtime) scanAutoCandidates(ctx context.Context) {
 		})
 		return
 	}
-	acc := newScanSummaryAccumulator()
+
+	// 先串行收集候选（含 runtime auth 读取），再 worker 池并发 activate。
+	candidates := make([]autoCandidate, 0, len(files))
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			r.snapshotScanSummary(acc.toInput())
+			r.snapshotScanSummary(newScanSummaryAccumulator().toInput())
 			return
 		}
 		runtimeAuth := snapshot.runtimeAuthFile(ctx, file)
 		if err := ctx.Err(); err != nil {
-			r.snapshotScanSummary(acc.toInput())
+			r.snapshotScanSummary(newScanSummaryAccumulator().toInput())
 			return
 		}
 		candidate, ok := snapshot.autoCandidate(file, runtimeAuth)
 		if !ok {
 			continue
 		}
-		detail := snapshot.activateCandidateDetail(ctx, candidate)
-		acc.add(string(candidate.provider), detail)
+		candidates = append(candidates, candidate)
 	}
+
+	acc := newScanSummaryAccumulator()
+	workers := maxConcurrencyWorkers(snapshot.config.MaxConcurrency)
+	// 缓冲 = 候选数，避免 ctx 取消后 worker 退出导致派发送死锁。
+	jobs := make(chan autoCandidate, len(candidates))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for candidate := range jobs {
+				if err := ctx.Err(); err != nil {
+					// 排空剩余 job，保证 close 后 sender/wg 不挂死。
+					continue
+				}
+				detail := snapshot.activateCandidateDetail(ctx, candidate)
+				acc.add(string(candidate.provider), detail)
+			}
+		}()
+	}
+	for _, candidate := range candidates {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case jobs <- candidate:
+		}
+		if err := ctx.Err(); err != nil {
+			break
+		}
+	}
+	close(jobs)
+	wg.Wait()
 	// 每个 auto tick 只写一条合并摘要，禁止同 tick 再写 activation。
 	r.snapshotScanSummary(acc.toInput())
+}
+
+func maxConcurrencyWorkers(n int) int {
+	if n < 1 {
+		return 1
+	}
+	return n
 }
 
 func (r *Runtime) autoSnapshot() (autoScanSnapshot, bool) {
@@ -115,6 +194,9 @@ func (r *Runtime) autoSnapshot() (autoScanSnapshot, bool) {
 func (r *Runtime) claimAutoScanSlot() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.autoScanRunning {
+		return false
+	}
 	interval := r.autoScanInterval
 	if interval <= 0 {
 		interval = r.config.ScanInterval
@@ -122,12 +204,24 @@ func (r *Runtime) claimAutoScanSlot() bool {
 	if interval <= 0 {
 		interval = config.Default().ScanInterval
 	}
+	// 阈值 = interval - slack，允许 timer 微早触发仍认领，避免静默丢整轮。
+	minGap := interval - autoScanIntervalSlack
+	if minGap < 0 {
+		minGap = 0
+	}
 	now := r.now()
-	if !r.lastAutoScanAt.IsZero() && now.Sub(r.lastAutoScanAt) < interval {
+	if !r.lastAutoScanAt.IsZero() && now.Sub(r.lastAutoScanAt) < minGap {
 		return false
 	}
 	r.lastAutoScanAt = now
+	r.autoScanRunning = true
 	return true
+}
+
+func (r *Runtime) releaseAutoScanSlot() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.autoScanRunning = false
 }
 
 func (r *Runtime) schedulerMissCooldownDuration() time.Duration {
@@ -212,6 +306,17 @@ func (r *Runtime) markSchedulerMiss(authID string) {
 	r.markActivateCooldownWithReason(authID, schedulerMissCooldownReason)
 }
 
+func (r *Runtime) clearSchedulerMissCooldown(authID string) {
+	authID = strings.TrimSpace(authID)
+	if authID == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.schedulerMissUntil, authID)
+	delete(r.activateCooldownReasonByAuth, authID)
+}
+
 func (s autoScanSnapshot) runtimeAuthFile(ctx context.Context, file host.AuthFile) autoRuntimeAuthFile {
 	authIndex := firstNonBlankAuto(file.AuthIndex)
 	if authIndex == "" {
@@ -266,6 +371,11 @@ func (s autoScanSnapshot) activateCandidateDetail(ctx context.Context, candidate
 	}
 	if !decision.Activate {
 		return autoScanDetail{outcome: autoScanOutcomeSkipped, reason: decision.Reason}
+	}
+	// 硬闸：同 auth+provider 已有 success 且 ResetAt 仍晚于 now，且非 remaining 恢复 → 强制 skip。
+	// 防止 synthetic 窗漂移导致 CycleKey 变化后反复唤醒。
+	if skip, reason := shouldHardSkipActiveCycle(s.store, candidate, decision, observedAt); skip {
+		return autoScanDetail{outcome: autoScanOutcomeSkipped, reason: reason}
 	}
 	if s.shouldSkipActivateCooldown != nil && s.shouldSkipActivateCooldown(candidate.authID) {
 		reason := schedulerMissCooldownReason
@@ -371,4 +481,44 @@ func previousStateFromStore(store *state.Store, authID string, provider detector
 	return detector.PreviousState{
 		CycleKey: cycleKey, Remaining: remaining, HasRemaining: hasRemaining,
 	}
+}
+
+// shouldHardSkipActiveCycle 在 detector 已判 Activate 时二次拦截：
+// store 有同 auth+provider LatestSuccess，ResetAt.After(now)，且本次不是「额度已恢复」。
+const autoCycleAlreadyProcessedReason = "额度周期已处理"
+
+func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, decision detector.Decision, observedAt time.Time) (bool, string) {
+	if store == nil {
+		return false, ""
+	}
+	// 真实 payload 证明 remaining 恢复时允许激活。
+	if decision.Reason == "额度已恢复" {
+		return false, ""
+	}
+	if decision.Observation.HasRemaining && decision.Observation.Remaining > 0 {
+		// 有 remaining 证据时，仅当 previous 也能证明恢复才走到 Activate；
+		// 若 previous 无 remaining 快照，detector 已会 skip；此处再保险：
+		// 若 detector 因 CycleKey 漂移误 Activate，且 success 仍在周期内，则 skip。
+		record, ok := store.LatestSuccess(candidate.authID, string(candidate.provider))
+		if !ok || record.ResetAt.IsZero() || !record.ResetAt.UTC().After(observedAt.UTC()) {
+			return false, ""
+		}
+		// remaining 恢复路径：previous 有快照且从 0 回升 / 耗尽后恢复 → detector reason 已是 额度已恢复。
+		// 此处仅拦截「无恢复证据」的漂移 Activate。
+		if recordHasRemainingSnapshot(record) {
+			// 有 previous remaining 时信任 detector 结果。
+			return false, ""
+		}
+		// success 无 remaining 快照 + 周期未结束 + detector 却 Activate → 强制 skip。
+		return true, autoCycleAlreadyProcessedReason
+	}
+	record, ok := store.LatestSuccess(candidate.authID, string(candidate.provider))
+	if !ok {
+		return false, ""
+	}
+	if record.ResetAt.IsZero() || !record.ResetAt.UTC().After(observedAt.UTC()) {
+		return false, ""
+	}
+	// 无真实 remaining 证明恢复，且周期未结束 → 禁止再唤醒。
+	return true, autoCycleAlreadyProcessedReason
 }

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -19,6 +20,10 @@ var (
 type Options struct {
 	Host host.Client
 	Now  func() time.Time
+	// Sleep 可选；sleep(ctx, d) 在 d 内阻塞，ctx 取消返回 false。测试可注入 fake clock。
+	Sleep func(context.Context, time.Duration) bool
+	// StartupDelay 可选。nil 用 autoScanStartupDelay；非 nil 用其值（0 表示首轮不延迟）。
+	StartupDelay *time.Duration
 }
 
 // RegisterRequest 是 plugin.register 的 JSON 请求形态。
@@ -72,6 +77,7 @@ type RunHistoryEntry struct {
 	Skipped   int                  `json:"skipped"`
 	Providers []RunHistoryProvider `json:"providers,omitempty"`
 	Message   string               `json:"message,omitempty"`
+	WakePath  string               `json:"wake_path,omitempty"`
 }
 
 // RunHistoryProvider 是单次激活尝试中某个提供商的计数。

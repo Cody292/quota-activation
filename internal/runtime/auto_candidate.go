@@ -8,6 +8,7 @@ import (
 	"quota-activation/internal/config"
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
+	"quota-activation/internal/quotapayload"
 	"quota-activation/internal/state"
 )
 
@@ -160,17 +161,14 @@ func antigravityConfigModelGroup(model string) (detector.ModelGroup, bool) {
 }
 
 func syntheticInferredQuotaPayload(provider detector.Provider, model string, record state.Record, observedAt time.Time) ([]byte, bool) {
-	// Codex Free 无真实 payload 时：若历史 success 从未写入 remaining 快照，
-	// 禁止用 monthly 推断锁死同 CycleKey（否则永远「周期已处理」）。
-	// 回退 syntheticAutoQuotaPayload 的 5h 短窗，使 reset_at 可前进并再唤醒。
-	if provider == detector.ProviderCodex && !recordHasRemainingSnapshot(record) {
-		return nil, false
-	}
-	windowName, limitSeconds, ok := normalizeInferredWindow(record.Window)
+	// 幂等：LatestSuccess 的 ResetAt 仍晚于 now 时，用该记录 Window+ResetAt 合成，
+	// 保证 CycleKey 与上次 success 一致 → detector 判「额度周期已处理」。
+	// 仅当无 success 或 ResetAt 已过期时，才回退 5h 短窗允许新周期。
+	// 删除「Codex 无 remaining 就禁止 inferred」导致的 CycleKey 漂移。
+	windowName, limitSeconds, resetAt, ok := quotapayload.WindowFromSuccess(record, observedAt)
 	if !ok {
 		return nil, false
 	}
-	resetAt := inferredResetAt(record.ResetAt, observedAt, time.Duration(limitSeconds)*time.Second)
 	return marshalAutoQuotaPayload(provider, model, windowName, limitSeconds, resetAt)
 }
 
@@ -184,93 +182,15 @@ func recordHasRemainingSnapshot(record state.Record) bool {
 }
 
 func syntheticAutoQuotaPayload(provider detector.Provider, model string, observedAt time.Time) ([]byte, bool) {
-	switch provider {
-	case detector.ProviderCodex:
-		// Codex Free 无真实 payload 时用 5h 短窗，禁止 30d monthly truncate 冒充刷新时间。
-		return marshalAutoQuotaPayload(provider, model, "5h", 5*60*60, stableWindowResetAt(observedAt, 5*time.Hour))
-	case detector.ProviderAntigravity:
-		return marshalAutoQuotaPayload(provider, model, "weekly", 7*24*60*60, stableWindowResetAt(observedAt, 7*24*time.Hour))
-	default:
+	windowName, limitSeconds, resetAt, ok := quotapayload.SyntheticWindow(provider, observedAt)
+	if !ok {
 		return nil, false
 	}
-}
-
-func normalizeInferredWindow(raw string) (name string, limitSeconds int, ok bool) {
-	switch detector.Window(strings.ToLower(strings.TrimSpace(raw))) {
-	case detector.WindowMonthly:
-		return "monthly", 30 * 24 * 60 * 60, true
-	case detector.WindowWeekly:
-		return "weekly", 7 * 24 * 60 * 60, true
-	case detector.WindowFiveHour:
-		return "5h", 5 * 60 * 60, true
-	default:
-		text := strings.ToLower(strings.TrimSpace(raw))
-		switch {
-		case strings.Contains(text, "month") || strings.Contains(text, "30d"):
-			return "monthly", 30 * 24 * 60 * 60, true
-		case strings.Contains(text, "week") || strings.Contains(text, "7d"):
-			return "weekly", 7 * 24 * 60 * 60, true
-		case strings.Contains(text, "5h") || strings.Contains(text, "5 hour"):
-			return "5h", 5 * 60 * 60, true
-		default:
-			return "", 0, false
-		}
-	}
-}
-
-func inferredResetAt(previousReset time.Time, observedAt time.Time, window time.Duration) time.Time {
-	observedAt = observedAt.UTC()
-	if !previousReset.IsZero() && previousReset.UTC().After(observedAt) {
-		return previousReset.UTC()
-	}
-	return stableWindowResetAt(observedAt, window)
+	return marshalAutoQuotaPayload(provider, model, windowName, limitSeconds, resetAt)
 }
 
 func marshalAutoQuotaPayload(provider detector.Provider, model string, windowName string, limitSeconds int, resetAt time.Time) ([]byte, bool) {
-	resetText := resetAt.UTC().Format(time.RFC3339)
-	switch provider {
-	case detector.ProviderCodex:
-		payload, err := json.Marshal(map[string]any{
-			"reset_at":             resetText,
-			"limit_window_seconds": limitSeconds,
-			"name":                 windowName,
-		})
-		return payload, err == nil
-	case detector.ProviderAntigravity:
-		group, ok := antigravityConfigModelGroup(model)
-		if !ok {
-			return nil, false
-		}
-		providerName := "anthropic"
-		if group == detector.ModelGroupGemini {
-			providerName = "gemini"
-		}
-		payload, err := json.Marshal(map[string]any{
-			"models": map[string]any{
-				model: map[string]any{
-					"modelProvider": providerName,
-					"quotaInfo": map[string]any{
-						"windows": []map[string]any{{
-							"resetTime":            resetText,
-							"name":                 windowName,
-							"limit_window_seconds": limitSeconds,
-						}},
-					},
-				},
-			},
-		})
-		return payload, err == nil
-	default:
-		return nil, false
-	}
-}
-
-func stableWindowResetAt(observedAt time.Time, window time.Duration) time.Time {
-	if window <= 0 {
-		window = 7 * 24 * time.Hour
-	}
-	now := observedAt.UTC()
-	return now.Truncate(window).Add(window)
+	return quotapayload.Marshal(provider, []string{model}, windowName, limitSeconds, resetAt)
 }
 
 func firstNonBlankAuto(values ...string) string {

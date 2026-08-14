@@ -167,6 +167,14 @@ func (hostCallbackAdapter) ModelExecute(ctx context.Context, request host.ModelE
 	return response, nil
 }
 
+func (hostCallbackAdapter) HTTPDo(ctx context.Context, request host.HTTPRequest) (host.HTTPResponse, error) {
+	var response host.HTTPResponse
+	if err := callHost(ctx, "host.http.do", request, &response); err != nil {
+		return host.HTTPResponse{}, err
+	}
+	return response, nil
+}
+
 func (hostCallbackAdapter) ListAuthFiles(ctx context.Context) ([]host.AuthFile, error) {
 	var response struct {
 		Files []host.AuthFile `json:"files"`

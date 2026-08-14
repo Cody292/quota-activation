@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"quota-activation/internal/activator"
@@ -30,6 +31,7 @@ type scanSummaryInput struct {
 }
 
 type scanSummaryAccumulator struct {
+	mu          sync.Mutex
 	attempted   int
 	succeeded   int
 	failed      int
@@ -48,6 +50,8 @@ func newScanSummaryAccumulator() *scanSummaryAccumulator {
 }
 
 func (a *scanSummaryAccumulator) add(provider string, detail autoScanDetail) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.attempted++
 	name := strings.TrimSpace(provider)
 	if name == "" {
@@ -89,6 +93,8 @@ func (a *scanSummaryAccumulator) add(provider string, detail autoScanDetail) {
 }
 
 func (a *scanSummaryAccumulator) toInput() scanSummaryInput {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	providers := make([]RunHistoryProvider, 0, len(a.byProvider))
 	for _, p := range a.byProvider {
 		providers = append(providers, *p)
@@ -172,8 +178,17 @@ func localizeSkipReason(reason string) string {
 	switch {
 	case trimmed == "":
 		return trimmed
-	case strings.Contains(trimmed, "quota 周期已处理") || strings.EqualFold(trimmed, "quota cycle already processed"):
-		return "本周期已处理"
+	case strings.Contains(trimmed, "额度周期已处理") ||
+		strings.Contains(trimmed, "本周期已唤醒") ||
+		strings.Contains(trimmed, "quota 周期已处理") ||
+		strings.EqualFold(trimmed, "quota cycle already processed"):
+		return "额度周期已处理"
+	case strings.Contains(trimmed, "额度已恢复") ||
+		strings.Contains(trimmed, "quota remaining 恢复"):
+		return "额度已恢复"
+	case strings.Contains(trimmed, "额度周期可用") ||
+		strings.Contains(trimmed, "quota 周期可用"):
+		return "额度周期可用"
 	case strings.Contains(trimmed, "remaining") && (strings.Contains(trimmed, "可激活") || strings.Contains(strings.ToLower(trimmed), "activat")):
 		return "额度可激活"
 	case strings.EqualFold(trimmed, "busy") || trimmed == "执行中":
@@ -264,7 +279,8 @@ func buildActivationHistoryEntry(trigger string, result activator.Result, err er
 		Providers: []RunHistoryProvider{{
 			Name: providerName, Attempted: 1, Succeeded: succeeded, Failed: failed, Skipped: skipped, Error: providerErr,
 		}},
-		Message: message,
+		Message:  message,
+		WakePath: string(result.WakePath),
 	}
 }
 
@@ -286,13 +302,55 @@ func localizeHistoryMessage(raw string) string {
 		strings.Contains(msg, "调度器未选中目标凭证"):
 		return "调度器未选中目标凭证"
 	case strings.Contains(lower, "antigravity activation response missing choices"):
-		return "Antigravity 唤醒响应缺少 choices"
+		return "Antigravity 唤醒响应缺少选项"
 	case isHostExecutorUnavailableError(msg):
 		return hostExecutorUnavailableMessage
 	case strings.Contains(lower, "host model execute") && strings.Contains(lower, "unavailable"):
 		return hostExecutorUnavailableMessage
+	// 旧英文 boost/confirm 错误 → 纯中文（生产路径已改中文，此处兜底历史记录）
+	case strings.Contains(lower, "priority boost required but auth document incomplete"):
+		return "需要提升优先级，但未能读取完整凭证文件"
+	case strings.Contains(lower, "priority boost refused incomplete auth document"):
+		return "凭证文档不完整，拒绝写入优先级"
+	case strings.Contains(lower, "is not unique highest priority") ||
+		strings.Contains(lower, "runtime priority") && strings.Contains(lower, "expected") ||
+		strings.Contains(lower, "priority boost confirm failed") ||
+		strings.Contains(lower, "runtime auth not found"):
+		return "优先级提升后，运行时仍未确认目标为最高优先级"
+	case strings.Contains(lower, "priority boost confirm canceled"):
+		return "优先级确认已取消"
+	case strings.Contains(lower, "priority boost confirm: missing host"):
+		return "优先级确认失败：宿主不可用"
+	case strings.Contains(lower, "get physical auth file") ||
+		strings.Contains(lower, "list auth files for priority boost"):
+		return "读取凭证文件失败"
+	case strings.Contains(lower, "boost auth priority"):
+		return "提升凭证优先级失败"
+	case strings.Contains(lower, "auth document is empty") ||
+		strings.Contains(lower, "auth document has no fields"):
+		return "凭证文档不完整，拒绝写入优先级"
+	case strings.Contains(lower, "usage_limit") || strings.Contains(lower, "usage limit"):
+		return "Codex唤醒失败：用量额度已耗尽"
+	case strings.Contains(lower, "create activation session"):
+		return "创建唤醒会话失败"
+	case strings.Contains(lower, "available model is required"):
+		return "缺少可用模型"
+	case strings.Contains(lower, "host model execute failed") ||
+		strings.Contains(lower, "host model execute") ||
+		strings.Contains(lower, "model execute failed"):
+		return "宿主模型执行失败"
+	case strings.Contains(lower, "activation error") || strings.Contains(lower, "activator: missing dependency"):
+		return "唤醒失败"
+	case strings.Contains(lower, "activator: busy") || strings.EqualFold(msg, "busy"):
+		return "执行中"
+	case strings.Contains(lower, "missing auth_id") || strings.Contains(lower, "invalid request") ||
+		strings.HasPrefix(lower, "missing "):
+		return "唤醒请求无效：缺少必要字段"
+	case strings.Contains(lower, "connection reset by peer") || strings.Contains(lower, "network failure"):
+		return "网络连接失败"
 	default:
-		return msg
+		// 兜底：委托 activator 统一映射，避免历史仍残留英文。
+		return activator.LocalizeUserMessage(msg)
 	}
 }
 

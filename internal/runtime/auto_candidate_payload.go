@@ -1,50 +1,14 @@
 package runtime
 
 import (
-	"encoding/json"
 	"strings"
 
 	"quota-activation/internal/host"
+	"quota-activation/internal/quotapayload"
 )
 
-func autoQuotaPayload(file host.AuthFile, document autoAuthFileDocument) ([]byte, bool) {
-	for _, raw := range []json.RawMessage{document.QuotaPayload, document.QuotaPayloadUpper} {
-		if len(raw) > 0 {
-			return append([]byte(nil), raw...), true
-		}
-	}
-	for _, values := range []map[string]any{file.Metadata, file.Attributes} {
-		for _, key := range []string{"quota_payload", "quotaPayload"} {
-			encoded, ok := encodeAutoPayload(values[key])
-			if ok {
-				return encoded, true
-			}
-		}
-	}
-	return nil, false
-}
-
-func encodeAutoPayload(raw any) ([]byte, bool) {
-	switch value := raw.(type) {
-	case nil:
-		return nil, false
-	case json.RawMessage:
-		return append([]byte(nil), value...), len(value) > 0
-	case []byte:
-		return append([]byte(nil), value...), len(value) > 0
-	case string:
-		trimmed := strings.TrimSpace(value)
-		if trimmed == "" {
-			return nil, false
-		}
-		return []byte(trimmed), true
-	default:
-		encoded, err := json.Marshal(value)
-		if err != nil {
-			return nil, false
-		}
-		return encoded, true
-	}
+func autoQuotaPayload(file host.AuthFile, _ autoAuthFileDocument) ([]byte, bool) {
+	return quotapayload.TrueFromFile(file)
 }
 
 func (d autoAuthFileDocument) availableModels() []string {
