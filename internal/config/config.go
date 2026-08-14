@@ -13,6 +13,16 @@ var (
 	ErrInvalidConfig = errors.New("配置无效")
 )
 
+// ActivationTransport 表示配额唤醒请求的宿主传输方式。
+type ActivationTransport string
+
+const (
+	// ActivationTransportDirectHTTP 通过 host.http.do 直接发送唤醒请求。
+	ActivationTransportDirectHTTP ActivationTransport = "direct_http"
+	// ActivationTransportSchedulerBoost 通过调度器提升优先级后走宿主模型路径。
+	ActivationTransportSchedulerBoost ActivationTransport = "scheduler_boost"
+)
+
 // Config 是 quota-activation 插件配置解析后的稳定形态。
 type Config struct {
 	AutoActivate             bool
@@ -22,7 +32,12 @@ type Config struct {
 	ActivationPrompt         string
 	StatePath                string
 	EnableBeforeActivation   bool
-	ActivationModels         ActivationModels
+	// ActivationTransport 默认 direct_http；允许 scheduler_boost。
+	ActivationTransport ActivationTransport
+	// SchedulerBoostFallback：direct_http 遇传输/宿主类失败时是否回退 legacy scheduler_boost；默认 true。
+	// 业务/严格成功判定失败禁止回退（不得伪装成功）。
+	SchedulerBoostFallback bool
+	ActivationModels       ActivationModels
 }
 
 // ActivationModels 定义不同 provider 唤醒请求必须显式配置的模型。
@@ -52,6 +67,8 @@ type rawConfig struct {
 	ActivationPrompt         *string              `json:"activation_prompt"`
 	StatePath                *string              `json:"state_path"`
 	EnableBeforeActivation   *bool                `json:"enable_before_activation"`
+	ActivationTransport      *string              `json:"activation_transport"`
+	SchedulerBoostFallback   *bool                `json:"scheduler_boost_fallback"`
 	ActivationModels         *rawActivationModels `json:"activation_models"`
 }
 
@@ -85,6 +102,8 @@ func Default() Config {
 		ActivationPrompt:         "quota activation ping",
 		StatePath:                "quota-activation/state.json",
 		EnableBeforeActivation:   true,
+		ActivationTransport:      ActivationTransportDirectHTTP,
+		SchedulerBoostFallback:   true,
 		ActivationModels: ActivationModels{
 			Codex: CodexActivationModels{Models: "gpt-5-mini"},
 		},
@@ -162,6 +181,16 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	}
 	if raw.EnableBeforeActivation != nil {
 		cfg.EnableBeforeActivation = *raw.EnableBeforeActivation
+	}
+	if raw.SchedulerBoostFallback != nil {
+		cfg.SchedulerBoostFallback = *raw.SchedulerBoostFallback
+	}
+	if raw.ActivationTransport != nil {
+		transport, err := parseActivationTransport(*raw.ActivationTransport)
+		if err != nil {
+			return Config{}, err
+		}
+		cfg.ActivationTransport = transport
 	}
 	if raw.MaxConcurrency != nil {
 		cfg.MaxConcurrency = *raw.MaxConcurrency
@@ -280,6 +309,19 @@ func validateAntigravityModels(models AntigravityActivationModels) (AntigravityA
 		return AntigravityActivationModels{}, invalid("activation_models.antigravity.models_group", "必须是 gemini 或 claude_gpt")
 	}
 	return models, nil
+}
+
+func parseActivationTransport(raw string) (ActivationTransport, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return ActivationTransportDirectHTTP, nil
+	}
+	switch ActivationTransport(value) {
+	case ActivationTransportDirectHTTP, ActivationTransportSchedulerBoost:
+		return ActivationTransport(value), nil
+	default:
+		return "", invalid("activation_transport", "必须是 direct_http 或 scheduler_boost")
+	}
 }
 
 func parseDuration(field string, raw string, missingUnit string) (time.Duration, error) {
