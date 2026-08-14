@@ -38,9 +38,32 @@ func (h *Handler) handleActivate(w http.ResponseWriter, request *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	activation, err := decoded.toActivatorRequest(h.config, h.now().UTC())
+	activation, shouldActivate, err := decoded.toActivatorRequest(h.config, h.now().UTC(), h.store)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	if !shouldActivate {
+		// 周期已处理：写 skipped 响应（200），禁止 400 导致前端当错误。
+		skipped := activator.Result{
+			AuthID:       activation.AuthID,
+			Provider:     string(activation.Provider),
+			Window:       string(activation.Window),
+			CycleKey:     activation.CycleKey.String(),
+			Status:       activator.StatusSkipped,
+			Success:      false,
+			ObservedAt:   activation.ObservedAt.UTC(),
+			ResetAt:      activation.ResetAt.UTC(),
+			LastError:    "本周期已唤醒，等待重置",
+			Remaining:    activation.Remaining,
+			HasRemaining: activation.HasRemaining,
+		}
+		if h.onActivation != nil {
+			h.onActivation(skipped, nil)
+		}
+		response := responseFromResult(skipped)
+		h.storeLatest(response)
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
 	result, err := h.activator.Activate(request.Context(), activation)
@@ -49,7 +72,8 @@ func (h *Handler) handleActivate(w http.ResponseWriter, request *http.Request) {
 	}
 	response := responseFromResult(result)
 	if err != nil {
-		response.LastError = state.Redact(err.Error())
+		// 管理面 LastError 必须纯中文（与历史/状态一致）。
+		response.LastError = activator.LocalizeUserMessage(state.Redact(err.Error()))
 		h.storeLatest(response)
 		writeJSON(w, statusForActivationError(err), response)
 		return

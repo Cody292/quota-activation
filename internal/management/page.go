@@ -111,7 +111,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-	          <h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.4</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.5</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -174,7 +174,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	              <li><code>enable_before_activation</code>: <span data-i18n="helpEnableBefore">是否在唤醒前自动启用已被禁用的凭证。</span></li>
 	              <li><code data-optional="true">scan_interval</code>: <span data-i18n="helpScanInterval">可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。</span></li>
 	              <li><code data-optional="true">activation_request_timeout</code>: <span data-i18n="helpActivationTimeout">可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。</span></li>
-	              <li><code data-optional="true">max_concurrency</code>: <span data-i18n="helpMaxConcurrency">可选；最大并发唤醒请求数。</span></li>
+	              <li><code data-optional="true">max_concurrency</code>: <span data-i18n="helpMaxConcurrency">可选；自动扫描与激活的并发上限（worker 池大小），默认 1。</span></li>
 	              <li><code data-optional="true">activation_prompt</code>: <span data-i18n="helpActivationPrompt">可选；唤醒提示词。</span></li>
 	            </ul>
 	            <h3 data-i18n="helpActivationModelsTitle">自动唤醒模型字段</h3>
@@ -235,7 +235,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpEnableBefore: "是否在唤醒前自动启用已被禁用的凭证。",
 	        helpScanInterval: "可选；自动扫描间隔，单位分钟，填写纯数字即可（默认 30）。",
 	        helpActivationTimeout: "可选；唤醒请求超时，单位秒，填写纯数字即可（默认 60）。",
-	        helpMaxConcurrency: "可选；最大并发唤醒请求数。",
+	        helpMaxConcurrency: "可选；自动扫描与激活的并发上限（worker 池大小），默认 1。",
 	        helpActivationPrompt: "可选；唤醒提示词。",
 	        helpCodexModels: "Codex 自动唤醒模型名称，例如 gpt-5-mini。",
 	        helpAntigravityGroup: "Antigravity 自动唤醒模型组，可选 gemini 或 claude_gpt。",
@@ -297,7 +297,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpEnableBefore: "Whether to automatically enable disabled credentials before activation.",
 	        helpScanInterval: "Optional; automatic scan interval in minutes. Enter a number only (default 30).",
 	        helpActivationTimeout: "Optional; activation request timeout in seconds. Enter a number only (default 60).",
-	        helpMaxConcurrency: "Optional; maximum concurrent activation requests.",
+	        helpMaxConcurrency: "Optional; concurrency limit for automatic scan activation (worker pool size); default 1.",
 	        helpActivationPrompt: "Optional; activation prompt text.",
 	        helpCodexModels: "Codex automatic activation model name, for example gpt-5-mini.",
 	        helpAntigravityGroup: "Antigravity automatic activation model group: gemini or claude_gpt.",
@@ -585,7 +585,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      if (!selectedModel || !selectedModel.value) { return null; }
 	      return { value: selectedModel.value, dataset: { group: selectedModel.group || "" } };
 	    }
-	    function quotaPayloadForActivation(credential, modelOption) { if (!credential || credential.provider !== "antigravity") { return credential ? credential.quota_payload : {}; } const model = modelOption.value; const group = modelOption.dataset.group || antigravityModelGroup(model); const provider = group === "gemini" ? "gemini" : "anthropic"; return { models: { [model]: { modelProvider: provider, quotaInfo: { windows: [{ resetTime: new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString(), name: "5h" }] } } } }; }
+	    function quotaPayloadForActivation(credential, modelOption) { return credential ? (credential.quota_payload || {}) : {}; }
 	    async function triggerActivation(button) {
 	      const credentials = selectedCredentials();
 	      if (credentials.length === 0) {
@@ -708,6 +708,58 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        }
 	        if (/定时扫描：/.test(msg)) {
 	          return msg.replace("定时扫描：", "Scheduled scan: ").replace(/尝试 /g, "attempted ").replace(/成功 /g, "succeeded ").replace(/失败 /g, "failed ").replace(/跳过 /g, "skipped ").replace(/；跳过：/, "; skip: ").replace(/；失败：/, "; fail: ").replace(/本周期已处理/g, "cycle already processed").replace(/执行中/g, "busy").replace(/宿主模型执行器不可用（已冷却）/g, "host model executor unavailable (cooled down)");
+	        }
+	        const enMap = [
+	          [/Codex唤醒失败：凭证已失效或鉴权失败（已重试3次）/, "Codex activation failed: credential invalid or unauthorized (retried 3 times)"],
+	          [/Antigravity唤醒失败：凭证已失效或鉴权失败（已重试3次）/, "Antigravity activation failed: credential invalid or unauthorized (retried 3 times)"],
+	          [/Codex唤醒失败：上游返回非成功状态（HTTP\s*(\d+)）/, "Codex activation failed: upstream returned a non-success status (HTTP $1)"],
+	          [/Antigravity唤醒失败：上游返回非成功状态（HTTP\s*(\d+)）/, "Antigravity activation failed: upstream returned a non-success status (HTTP $1)"],
+	          [/Codex唤醒失败：上游返回非成功状态/, "Codex activation failed: upstream returned a non-success status"],
+	          [/Antigravity唤醒失败：上游返回非成功状态/, "Antigravity activation failed: upstream returned a non-success status"],
+	          [/Codex唤醒失败：用量额度已耗尽/, "Codex activation failed: usage quota exhausted"],
+	          [/Codex唤醒失败：响应体为空/, "Codex activation failed: empty response body"],
+	          [/Antigravity唤醒失败：响应体为空/, "Antigravity activation failed: empty response body"],
+	          [/Codex唤醒失败：响应不是合法数据/, "Codex activation failed: response is not valid data"],
+	          [/Antigravity唤醒失败：响应不是合法数据/, "Antigravity activation failed: response is not valid data"],
+	          [/Codex唤醒失败：响应缺少有效输出结构/, "Codex activation failed: response missing valid output structure"],
+	          [/Codex唤醒失败：上游返回业务错误/, "Codex activation failed: upstream returned a business error"],
+	          [/Antigravity唤醒失败：上游返回业务错误/, "Antigravity activation failed: upstream returned a business error"],
+	          [/Codex唤醒失败：上游返回错误/, "Codex activation failed: upstream returned an error"],
+	          [/Antigravity唤醒失败：响应缺少选项/, "Antigravity activation failed: response missing choices"],
+	          [/Codex直连唤醒失败：无法读取凭证材料/, "Codex direct wake failed: unable to read credential material"],
+	          [/Antigravity直连唤醒失败：无法读取凭证材料/, "Antigravity direct wake failed: unable to read credential material"],
+	          [/本周期已唤醒，等待重置/, "Already woken this cycle; waiting for reset"],
+	          [/额度周期已处理/, "Quota cycle already processed"],
+	          [/读取物理凭证文件失败[：:]\s*(.*)/, "Failed to read physical credential file: $1"],
+	          [/读取物理凭证文件失败/, "Failed to read physical credential file"],
+	          [/读取凭证文件失败[：:]\s*(.*)/, "Failed to read credential file: $1"],
+	          [/读取凭证文件失败/, "Failed to read credential file"],
+	          [/直连唤醒失败[：:]\s*(.*)/, "Direct wake activation failed: $1"],
+	          [/直连唤醒失败/, "Direct wake activation failed"],
+	          [/列举凭证以解析可用模型失败[：:]\s*(.*)/, "Failed to list credentials for available models: $1"],
+	          [/列举凭证以解析可用模型失败/, "Failed to list credentials for available models"],
+	          [/列举凭证失败[：:]\s*(.*)/, "Failed to list credentials: $1"],
+	          [/列举凭证失败/, "Failed to list credentials"],
+	          [/缺少可用模型/, "Missing available models"],
+	          [/网络连接失败[：:]\s*(.*)/, "Network connection failed: $1"],
+	          [/网络连接失败/, "Network connection failed"],
+	          [/^执行中$/, "In progress"],
+	          [/唤醒请求无效[：:]\s*(.*)/, "Invalid activation request: $1"],
+	          [/未找到匹配的凭证文件/, "Matching credential file not found"],
+	          [/凭证已禁用/, "Credential disabled"],
+	          [/解析凭证文件失败/, "Failed to decode credential file"],
+	          [/写入凭证文件失败/, "Failed to write credential file"],
+	          [/宿主模型执行失败/, "Host model execution failed"],
+	          [/操作已取消/, "Operation canceled"],
+	          [/操作超时/, "Operation timed out"],
+	          [/提升凭证优先级失败/, "Failed to boost credential priority"],
+	          [/科德克斯唤醒失败：/, "Codex activation failed: "],
+	          [/反重力唤醒失败：/, "Antigravity activation failed: "]
+	        ];
+	        for (const pair of enMap) {
+	          if (pair[0].test(msg)) {
+	            return msg.replace(pair[0], pair[1]);
+	          }
 	        }
 	        return msg;
 	      }

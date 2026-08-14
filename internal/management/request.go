@@ -11,6 +11,7 @@ import (
 	"quota-activation/internal/activator"
 	"quota-activation/internal/config"
 	"quota-activation/internal/detector"
+	"quota-activation/internal/state"
 )
 
 type activationRequest struct {
@@ -48,44 +49,53 @@ func decodeActivationRequest(request *http.Request) (activationRequest, error) {
 	return decoded, nil
 }
 
-func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.Time) (activator.Request, error) {
+// toActivatorRequest 解析手动激活请求。store 非空时注入 previous 做周期去重；
+// !Activate 时返回 ok=false（handler 写 skipped，禁止 400 invalid_request）。
+func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.Time, store *state.Store) (activator.Request, bool, error) {
 	provider, err := parseProvider(r.Provider)
 	if err != nil {
-		return activator.Request{}, err
+		return activator.Request{}, false, err
 	}
 	modelGroup, err := parseModelGroup(provider, r.ModelGroup, r.Model)
 	if err != nil {
-		return activator.Request{}, err
+		return activator.Request{}, false, err
 	}
 	if err := validateManualModelGroup(modelGroup); err != nil {
-		return activator.Request{}, err
+		return activator.Request{}, false, err
 	}
 	model := strings.TrimSpace(r.Model)
-	decision, err := detector.Evaluate(detector.ProbeInput{
+	previous := activator.PreviousStateFromStore(store, r.AuthID, provider)
+	if prevKey := strings.TrimSpace(r.PreviousCycleKey); prevKey != "" && previous.CycleKey == "" {
+		previous.CycleKey = prevKey
+	}
+	decision, err := detector.EvaluateWithPrevious(detector.ProbeInput{
 		AuthID:     r.AuthID,
 		Provider:   provider,
 		Model:      model,
 		ObservedAt: observedAt,
 		Payload:    r.QuotaPayload,
-	}, "")
+	}, previous)
 	if err != nil {
-		return activator.Request{}, fmt.Errorf("evaluate quota: %w", err)
+		return activator.Request{}, false, fmt.Errorf("evaluate quota: %w", err)
+	}
+	req := activator.Request{
+		AuthID:       r.AuthID,
+		Provider:     provider,
+		ModelGroup:   modelGroup,
+		Window:       decision.Observation.Window,
+		CycleKey:     decision.CycleKey,
+		Model:        model,
+		Prompt:       r.Prompt,
+		Disabled:     r.Disabled,
+		ObservedAt:   observedAt,
+		ResetAt:      decision.Observation.ResetAt,
+		Remaining:    decision.Observation.Remaining,
+		HasRemaining: decision.Observation.HasRemaining,
 	}
 	if !decision.Activate {
-		return activator.Request{}, fmt.Errorf("quota cycle already handled")
+		return req, false, nil
 	}
-	return activator.Request{
-		AuthID:     r.AuthID,
-		Provider:   provider,
-		ModelGroup: modelGroup,
-		Window:     decision.Observation.Window,
-		CycleKey:   decision.CycleKey,
-		Model:      model,
-		Prompt:     r.Prompt,
-		Disabled:   r.Disabled,
-		ObservedAt: observedAt,
-		ResetAt:    decision.Observation.ResetAt,
-	}, nil
+	return req, true, nil
 }
 
 func validateManualModelGroup(modelGroup detector.ModelGroup) error {

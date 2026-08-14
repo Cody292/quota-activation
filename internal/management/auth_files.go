@@ -3,11 +3,9 @@ package management
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
@@ -131,7 +129,7 @@ func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]mod
 			modelCache[cacheKey] = models
 		}
 	}
-	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: models, QuotaPayload: h.quotaPayload(provider, availableModels)}, true
+	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: models, QuotaPayload: h.quotaPayload(file, provider, availableModels, authID)}, true
 }
 
 func mergeRuntimeAuthFile(base host.AuthFile, runtime host.AuthFile) host.AuthFile {
@@ -176,132 +174,6 @@ func normalizeProvider(raw string) string {
 		return string(detector.ProviderAntigravity)
 	default:
 		return ""
-	}
-}
-
-func (d authFileDocument) availableModels() []string {
-	models := append([]string(nil), d.AvailableModels...)
-	models = append(models, d.AvailableModelsUpper...)
-	models = append(models, d.Models...)
-	models = append(models, d.RecentModels...)
-	return uniqueModels(models)
-}
-
-func runtimeAvailableModels(file host.AuthFile) []string {
-	models := append([]string(nil), file.Models...)
-	models = append(models, file.RecentModels...)
-	models = append(models, stringSliceFromMap(file.Metadata, "available_models")...)
-	models = append(models, stringSliceFromMap(file.Metadata, "availableModels")...)
-	models = append(models, stringSliceFromMap(file.Metadata, "models")...)
-	models = append(models, stringSliceFromMap(file.Attributes, "available_models")...)
-	models = append(models, stringSliceFromMap(file.Attributes, "availableModels")...)
-	models = append(models, stringSliceFromMap(file.Attributes, "models")...)
-	return uniqueModels(models)
-}
-
-func uniqueModels(models []string) []string {
-	choices := make([]string, 0, len(models))
-	seen := make(map[string]struct{}, len(models))
-	for _, model := range models {
-		trimmed := strings.TrimSpace(model)
-		if trimmed == "" {
-			continue
-		}
-		if _, ok := seen[trimmed]; ok {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		choices = append(choices, trimmed)
-	}
-	return choices
-}
-
-func stringSliceFromMap(values map[string]any, key string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	switch raw := values[key].(type) {
-	case []string:
-		return raw
-	case []any:
-		out := make([]string, 0, len(raw))
-		for _, item := range raw {
-			if value, ok := item.(string); ok {
-				out = append(out, value)
-			}
-		}
-		return out
-	case string:
-		return strings.Split(raw, ",")
-	default:
-		return nil
-	}
-}
-
-func (h *Handler) modelChoices(provider string, availableModels []string) []modelChoice {
-	switch detector.Provider(provider) {
-	case detector.ProviderCodex:
-		choices := make([]modelChoice, 0, len(availableModels))
-		for _, model := range availableModels {
-			choices = append(choices, modelChoice{Value: model, Label: fmt.Sprintf("Codex · %s", model)})
-		}
-		return choices
-	case detector.ProviderAntigravity:
-		choices := make([]modelChoice, 0, len(availableModels))
-		for _, model := range availableModels {
-			group := antigravityModelGroup(model)
-			if group == detector.ModelGroupNone {
-				continue
-			}
-			choices = append(choices, modelChoice{Value: model, Label: fmt.Sprintf("%s · %s", antigravityModelGroupLabel(group), model), Group: string(group)})
-		}
-		return choices
-	default:
-		return nil
-	}
-}
-
-func antigravityModelGroup(model string) detector.ModelGroup {
-	lower := strings.ToLower(model)
-	if strings.Contains(lower, "gemini") {
-		return detector.ModelGroupGemini
-	}
-	if strings.Contains(lower, "claude") || strings.Contains(lower, "gpt") {
-		return detector.ModelGroupClaudeGPT
-	}
-	return detector.ModelGroupNone
-}
-
-func antigravityModelGroupLabel(group detector.ModelGroup) string {
-	if group == detector.ModelGroupGemini {
-		return "Gemini"
-	}
-	return "Claude/GPT"
-}
-
-func (h *Handler) quotaPayload(provider string, availableModels []string) any {
-	resetAt := h.now().UTC().Add(5 * time.Hour).Format(time.RFC3339)
-	switch detector.Provider(provider) {
-	case detector.ProviderCodex:
-		return map[string]any{"reset_after_seconds": 18000, "limit_window_seconds": 18000, "name": "5h"}
-	case detector.ProviderAntigravity:
-		models := map[string]any{}
-		for _, model := range availableModels {
-			group := antigravityModelGroup(model)
-			if group == detector.ModelGroupNone {
-				continue
-			}
-			providerName := "anthropic"
-			if group == detector.ModelGroupGemini {
-				providerName = "gemini"
-			}
-			models[model] = map[string]any{"modelProvider": providerName, "quotaInfo": map[string]any{"windows": []map[string]any{{"resetTime": resetAt, "name": "5h"}}}}
-		}
-		return map[string]any{
-			"models": models,
-		}
-	default:
-		return map[string]any{}
 	}
 }
 

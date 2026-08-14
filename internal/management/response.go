@@ -23,6 +23,7 @@ type activationResponse struct {
 	ObservedAt       time.Time         `json:"observed_at"`
 	ResetAt          time.Time         `json:"reset_at"`
 	LastError        string            `json:"last_error,omitempty"`
+	WakePath         string            `json:"wake_path,omitempty"`
 	StateRecords     []state.Record    `json:"records,omitempty"`
 	LatestStatus     string            `json:"latest_status,omitempty"`
 	Routes           []Route           `json:"routes,omitempty"`
@@ -55,7 +56,8 @@ func responseFromResult(result activator.Result) activationResponse {
 		RestoredDisabled: result.RestoredDisabled,
 		ObservedAt:       result.ObservedAt.UTC(),
 		ResetAt:          result.ResetAt.UTC(),
-		LastError:        state.Redact(result.LastError),
+		LastError:        activator.LocalizeUserMessage(state.Redact(result.LastError)),
+		WakePath:         string(result.WakePath),
 	}
 }
 

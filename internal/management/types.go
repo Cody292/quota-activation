@@ -8,6 +8,7 @@ import (
 	"quota-activation/internal/activator"
 	"quota-activation/internal/config"
 	"quota-activation/internal/host"
+	"quota-activation/internal/state"
 )
 
 const managementPrefix = "/v0/management/quota-activation"
@@ -18,8 +19,11 @@ const resourceStatusPath = "/status"
 type Options struct {
 	Activator *activator.Activator
 	Host      host.Client
-	Config    config.Config
-	Now       func() time.Time
+	// Store 可选：手动激活 Evaluate 时注入 previous，减少无意义 Activate 调用。
+	// 主幂等仍由 Activator 硬闸保证；Store 为 nil 时仅依赖硬闸。
+	Store  *state.Store
+	Config config.Config
+	Now    func() time.Time
 	// OnActivation 在每次手动激活完成后回调（成功或失败均触发），用于写入 run_history。
 	OnActivation func(result activator.Result, err error)
 	// RunHistory 返回 diagnostics 内嵌的 run_history 数组（任意 JSON 可序列化切片）。
@@ -49,6 +53,7 @@ type Registration struct {
 type Handler struct {
 	activator    *activator.Activator
 	host         host.Client
+	store        *state.Store
 	config       config.Config
 	now          func() time.Time
 	onActivation func(result activator.Result, err error)
@@ -82,6 +87,7 @@ func NewHandler(options Options) *Handler {
 	return &Handler{
 		activator:    options.Activator,
 		host:         options.Host,
+		store:        options.Store,
 		config:       options.Config,
 		now:          now,
 		onActivation: options.OnActivation,
