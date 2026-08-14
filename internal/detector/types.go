@@ -88,7 +88,9 @@ type ProbeObservation struct {
 }
 
 // PreviousState 是上次成功激活时的周期状态，用于同 CycleKey 下的 remaining 恢复判定。
-// CycleKey 仍不含 remaining；HasRemaining=false 时仅按 CycleKey 去重（兼容旧调用方）。
+// CycleKey 仍不含 remaining。
+// HasRemaining=false 且 CycleKey 已匹配时视为本周期已处理（幂等 skip），
+// 仅当 HasRemaining 且 remaining 从耗尽恢复或回升时再唤醒。
 type PreviousState struct {
 	CycleKey     string
 	Remaining    int64

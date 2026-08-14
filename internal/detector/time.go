@@ -15,7 +15,22 @@ func windowResetAt(observedAt time.Time, window quotaWindow) (time.Time, bool) {
 	if !ok || seconds <= 0 {
 		return time.Time{}, false
 	}
-	return observedAt.UTC().Add(time.Duration(seconds) * time.Second), true
+	// 相对秒数禁止 observedAt+seconds（每次 now 漂移导致 CycleKey 漂移）。
+	// 使用 truncate 稳定窗边界；窗长优先 limit_window_seconds，否则用 reset_after 自身。
+	windowDur := time.Duration(seconds) * time.Second
+	if limitSec, limitOK := toInt64(window.LimitWindowSeconds); limitOK && limitSec > 0 {
+		windowDur = time.Duration(limitSec) * time.Second
+	}
+	return stableWindowResetAt(observedAt, windowDur), true
+}
+
+// stableWindowResetAt 将 observedAt 截断到窗长对齐边界再加一窗，保证同窗内 CycleKey 稳定。
+func stableWindowResetAt(observedAt time.Time, window time.Duration) time.Time {
+	if window <= 0 {
+		window = 5 * time.Hour
+	}
+	now := observedAt.UTC()
+	return now.Truncate(window).Add(window)
 }
 
 func parseAnyTime(raw any) (time.Time, bool) {
@@ -67,6 +82,14 @@ func parseUnix(value int64) (time.Time, bool) {
 func toInt64(raw any) (int64, bool) {
 	switch value := raw.(type) {
 	case float64:
+		return int64(value), true
+	case float32:
+		return int64(value), true
+	case int:
+		return int64(value), true
+	case int64:
+		return value, true
+	case int32:
 		return int64(value), true
 	case json.Number:
 		integer, err := value.Int64()

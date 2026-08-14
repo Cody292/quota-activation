@@ -95,26 +95,45 @@ func parseAntigravityGroups(groups []antigravityGroup, modelGroup ModelGroup) (p
 	return parsedCycle{}, false
 }
 
-func firstAntigravityWindow(windows []quotaWindow, group ModelGroup) (parsedCycle, bool) {
-	// 多窗口时优先 weekly（及更长周期），避免 5h 抢先导致自动唤醒按错误周期去重。
-	var best parsedCycle
-	bestRank := -1
-	for _, window := range windows {
-		cycle, ok := antigravityWindow(window, group)
-		if !ok {
-			continue
-		}
-		rank := windowPreference(cycle.window)
-		if rank > bestRank {
-			best = cycle
-			bestRank = rank
-		}
+	func firstAntigravityWindow(windows []quotaWindow, group ModelGroup) (parsedCycle, bool) {
+		// previous 由调用方传入；探测路径尚无 PreviousWindow，先按未知处理。
+		return selectAntigravityWindow(windows, group, WindowUnknown)
 	}
-	if bestRank < 0 {
-		return parsedCycle{}, false
+
+	// selectAntigravityWindow 以真源窗口集合为唯一真相。
+	// 存在比 previous 更长的窗时选更长（修污染 5h）；否则 previous 同名且不被支配时保持稳定。
+	func selectAntigravityWindow(windows []quotaWindow, group ModelGroup, previousWindow Window) (parsedCycle, bool) {
+		var longest parsedCycle
+		longestRank := -1
+		var matchedPrevious parsedCycle
+		hasMatchedPrevious := false
+		for _, window := range windows {
+			cycle, ok := antigravityWindow(window, group)
+			if !ok {
+				continue
+			}
+			rank := windowPreference(cycle.window)
+			if rank > longestRank {
+				longest = cycle
+				longestRank = rank
+			}
+			if previousWindow != WindowUnknown && cycle.window == previousWindow {
+				matchedPrevious = cycle
+				hasMatchedPrevious = true
+			}
+		}
+		if longestRank < 0 {
+			return parsedCycle{}, false
+		}
+		// 真源有更长窗（weekly/monthly vs 5h）→ 选更长，禁止被污染 previous 锁死。
+		if longestRank > windowPreference(previousWindow) {
+			return longest, true
+		}
+		if hasMatchedPrevious {
+			return matchedPrevious, true
+		}
+		return longest, true
 	}
-	return best, true
-}
 
 func antigravityWindow(window quotaWindow, group ModelGroup) (parsedCycle, bool) {
 	resetAt, ok := parseAnyTime(window.ResetTime)
