@@ -1,6 +1,7 @@
 package activator
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -12,7 +13,7 @@ import (
 )
 
 var (
-	// ErrBusy 表示已有激活流程正在执行，本次请求不会并发进入宿主调用。
+	// ErrBusy 表示并发槽位已满（max_concurrency），本次请求不会进入宿主调用。
 	ErrBusy = errors.New("activator: busy")
 	// ErrDisabledCredential 历史兼容错误：禁用凭证不再因此阻断手动/统一唤醒。
 	// 管理层仍可能匹配该错误码，但 Activate 路径不再返回它。
@@ -35,7 +36,7 @@ const (
 	StatusFailed Status = "failed"
 	// StatusSkipped 表示目标不允许激活，流程未调用宿主模型接口。
 	StatusSkipped Status = "skipped"
-	// StatusBusy 表示串行执行器正忙，本次请求未进入激活流程。
+	// StatusBusy 表示并发槽位已满，本次请求未进入激活流程。
 	StatusBusy Status = "busy"
 )
 
@@ -46,6 +47,8 @@ type Options struct {
 	State    *state.Store
 	Config   config.Config
 	Now      func() time.Time
+	// Sleep 可选；sleep(ctx, d) 在 d 内阻塞，ctx 取消返回 false。测试可注入立即返回。
+	Sleep func(context.Context, time.Duration) bool
 }
 
 // Request 描述一次纯内部凭证激活请求。
@@ -64,6 +67,15 @@ type Request struct {
 	HasRemaining bool
 }
 
+// WakePath 标识实际唤醒传输路径（JSON: wake_path）。
+type WakePath string
+
+const (
+	WakePathDirectHTTP             WakePath = "direct_http"
+	WakePathSchedulerBoost         WakePath = "scheduler_boost"
+	WakePathSchedulerBoostFallback WakePath = "scheduler_boost_fallback"
+)
+
 // Result 是一次激活流程的脱敏结果。
 type Result struct {
 	AuthID           string    `json:"auth_id"`
@@ -80,7 +92,8 @@ type Result struct {
 	ResetAt          time.Time `json:"reset_at"`
 	LastError        string    `json:"last_error,omitempty"`
 	// Warning 表示主流程已成功时的非致命提示（如状态落盘被中断），不应把整条标为失败。
-	Warning      string `json:"warning,omitempty"`
-	Remaining    int64  `json:"remaining,omitempty"`
-	HasRemaining bool   `json:"has_remaining,omitempty"`
+	Warning      string   `json:"warning,omitempty"`
+	WakePath     WakePath `json:"wake_path,omitempty"`
+	Remaining    int64    `json:"remaining,omitempty"`
+	HasRemaining bool     `json:"has_remaining,omitempty"`
 }

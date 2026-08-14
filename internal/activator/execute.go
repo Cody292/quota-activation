@@ -30,15 +30,25 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 		return result, err
 	}
 	request.Model = model
-	body, err := json.Marshal(activationPingBody(request))
+	body, err := a.encodeActivationPing(callCtx, request)
 	if err != nil {
+		// AG 缺 project / 材料：fail-closed，禁止再发 OpenAI messages。
+		if request.Provider == detector.ProviderAntigravity {
+			result.Status = StatusFailed
+			result.Success = false
+			result.LastError = chineseDirectError(err, "直连唤醒失败：协议构建失败")
+			result.Nonce = created.Nonce
+			return result, nil
+		}
 		return result, fmt.Errorf("encode activation ping: %w", safeError(err))
 	}
+	// 仅依赖 nonce + priority boost 进入宿主最高候选；不再注入 X-CPA-Force-Auth-ID。
+	headers := map[string][]string{scheduler.NonceHeaderName: {created.Nonce}}
 	executeRequest := host.ModelExecuteRequest{
 		Model:   request.Model,
 		Stream:  false,
 		Body:    body,
-		Headers: map[string][]string{scheduler.NonceHeaderName: {created.Nonce}},
+		Headers: headers,
 	}
 	if request.Provider == detector.ProviderAntigravity {
 		executeRequest.EntryProtocol = "openai"
@@ -69,14 +79,17 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 	if !a.activationSessionConsumed(created.Nonce) {
 		result.Status = StatusFailed
 		result.Success = false
-		result.LastError = "调度器未选中目标凭证"
+		// 保留「调度器未选中目标凭证」子串供 isSchedulerMissError 匹配；附加诊断细节。
+		result.LastError = "调度器未选中目标凭证（目标未进入最高优先级候选）"
 		return result, nil
 	}
-	if request.Provider == detector.ProviderAntigravity && !antigravityActivationSucceeded(checked) {
-		result.Status = StatusFailed
-		result.Success = false
-		result.LastError = "Antigravity 唤醒响应缺少 choices"
-		return result, nil
+	if request.Provider == detector.ProviderAntigravity {
+		if ok, message := EvaluateAntigravityActivationSuccess(checked.StatusCode, checked.Body); !ok {
+			result.Status = StatusFailed
+			result.Success = false
+			result.LastError = message
+			return result, nil
+		}
 	}
 	return result, nil
 }
@@ -258,8 +271,11 @@ type hostCallbackErrorPayload struct {
 }
 
 type antigravityActivationResponse struct {
-	Choices []json.RawMessage `json:"choices"`
-	Error   *struct {
+	Candidates []json.RawMessage `json:"candidates"`
+	Response   struct {
+		Candidates []json.RawMessage `json:"candidates"`
+	} `json:"response"`
+	Error *struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 	} `json:"error"`
@@ -270,37 +286,23 @@ func usageLimitBusinessMessage(err error) (string, bool) {
 	if !strings.Contains(text, usageLimitReachedType) {
 		return "", false
 	}
-	message := "The usage limit has been reached"
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start >= 0 && end > start {
-		var payload hostCallbackErrorPayload
-		if json.Unmarshal([]byte(text[start:end+1]), &payload) == nil && payload.Error.Type == usageLimitReachedType {
-			if parsed := strings.TrimSpace(payload.Error.Message); parsed != "" {
-				message = parsed
-			}
-		}
-	}
-	return usageLimitReachedType + ": " + message, true
+	// 用户可见 LastError：品牌名 Codex 保留英文，其余中文；禁止泄漏 usage_limit_reached 原文。
+	return "Codex唤醒失败：用量额度已耗尽", true
 }
 
 func antigravityActivationSucceeded(response host.ModelExecuteResponse) bool {
-	var payload antigravityActivationResponse
-	if err := json.Unmarshal(response.Body, &payload); err != nil {
-		return false
+	statusCode := response.StatusCode
+	if statusCode == 0 {
+		statusCode = http.StatusOK
 	}
-	return payload.Error == nil && len(payload.Choices) > 0
+	ok, _ := EvaluateAntigravityActivationSuccess(statusCode, response.Body)
+	return ok
 }
 
 type codexPing struct {
 	Model string         `json:"model"`
 	Input []modelMessage `json:"input"`
 	Store bool           `json:"store"`
-}
-
-type modelPing struct {
-	Model    string         `json:"model"`
-	Messages []modelMessage `json:"messages"`
 }
 
 type legacyPing struct {
@@ -314,6 +316,30 @@ type modelMessage struct {
 	Content string `json:"content"`
 }
 
+func (a *Activator) encodeActivationPing(ctx context.Context, request Request) ([]byte, error) {
+	if request.Provider != detector.ProviderAntigravity {
+		return json.Marshal(activationPingBody(request))
+	}
+	return a.encodeAntigravityActivationPing(ctx, request)
+}
+
+// encodeAntigravityActivationPing 复用官方 generateContent 信封；缺材料/project 不得组 OpenAI 形。
+func (a *Activator) encodeAntigravityActivationPing(ctx context.Context, request Request) ([]byte, error) {
+	data, err := a.resolveDirectAuthMaterial(ctx, request.AuthID)
+	if err != nil {
+		return nil, err
+	}
+	material, err := ParseAuthMaterial(data)
+	if err != nil {
+		return nil, err
+	}
+	protocol, err := BuildAntigravityProtocol(material, request.Model, request.Prompt)
+	if err != nil {
+		return nil, err
+	}
+	return protocol.Body, nil
+}
+
 func activationPingBody(request Request) any {
 	if request.Provider == detector.ProviderCodex {
 		return codexPing{Model: request.Model, Input: []modelMessage{{Role: "user", Content: request.Prompt}}, Store: false}
@@ -325,9 +351,17 @@ func activationPingBody(request Request) any {
 			Messages: []modelMessage{{Role: "user", Content: request.Prompt}},
 		}
 	}
-	return modelPing{
-		Model:    request.Model,
-		Messages: []modelMessage{{Role: "user", Content: request.Prompt}},
+	// AG 禁止 OpenAI messages；真正组信封走 encodeAntigravityActivationPing。
+	return antigravityActivationBody{
+		Model:       request.Model,
+		UserAgent:   antigravityUserAgent,
+		RequestType: antigravityRequestType,
+		Request: antigravityInnerRequest{
+			Contents: []antigravityContent{{
+				Role:  "user",
+				Parts: []antigravityPart{{Text: request.Prompt}},
+			}},
+		},
 	}
 }
 

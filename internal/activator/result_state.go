@@ -22,7 +22,8 @@ const saveStateWarningGeneric = "唤醒已成功，但状态保存失败（非�
 func (a *Activator) failAndStore(ctx context.Context, result Result, err error) (Result, error) {
 	result.Status = failedStatus(result.Status)
 	result.Success = false
-	result.LastError = state.Redact(err.Error())
+	// LastError 对用户/历史可见：脱敏后映射为纯中文。
+	result.LastError = LocalizeUserMessage(state.Redact(err.Error()))
 	stored, storeErr := a.storeResult(ctx, result)
 	if storeErr != nil {
 		return stored, errors.Join(err, storeErr)
