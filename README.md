@@ -36,7 +36,8 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
        - host.auth.list / get_runtime 取凭证
        - 真实额度 payload 优先，否则 state 推断，再兜底长窗
        - 同 cycle 已 success 则跳过
-       - 通过 host.model.execute 发送唤醒请求
+       - 与手动共用 Activator.Activate 内核
+       - 默认 direct_http（host.http.do）；可选 scheduler_boost
 ```
 
 ## 构建与安装
@@ -91,6 +92,10 @@ plugins:
       activation_request_timeout: "60"
       max_concurrency: 1
       activation_prompt: "quota activation ping"
+      # 默认 direct_http：经 host.http.do 直连上游，不写 priority / 不走调度器
+      activation_transport: "direct_http"
+      # direct_http 仅在传输/宿主类失败时回退 legacy scheduler_boost；业务失败不回退
+      scheduler_boost_fallback: true
       activation_models:
         codex:
           models: "gpt-5-mini"
@@ -98,6 +103,8 @@ plugins:
           models_group: "gemini"
           models: "gemini-3-flash"
 ```
+
+当前插件版本：**0.0.5**（与 `registry.json` 一致）。
 
 字段说明：
 
@@ -108,8 +115,10 @@ plugins:
 | `enable_before_activation` | 为 `true` 时，达到唤醒条件后自动启用已禁用凭证并保持启用。 |
 | `scan_interval` | 自动扫描间隔，**单位：分钟**。填写纯数字即可，无需带单位；默认 `30`。 |
 | `activation_request_timeout` | 唤醒请求超时，**单位：秒**。填写纯数字即可；默认 `60`。 |
-| `max_concurrency` | 最大并发唤醒请求数；当前流程预期为 `1`。 |
-| `activation_prompt` | 通过 `host.model.execute` 发送的配额唤醒提示词。 |
+| `max_concurrency` | 自动扫描与激活的并发上限（worker 池大小）；默认 `1`。 |
+| `activation_prompt` | 唤醒提示词（`direct_http` 写入上游请求体；`scheduler_boost` 经 `host.model.execute` 发送）。 |
+| `activation_transport` | 唤醒传输方式：`direct_http`（**默认**，`host.http.do` 直连）或 `scheduler_boost`（legacy：临时提升 priority + `host.model.execute`）。 |
+| `scheduler_boost_fallback` | 仅当 `activation_transport=direct_http` 时生效；默认 `true`。遇**传输/宿主类**失败可回退一次 `scheduler_boost`；**业务失败 / 假 2xx（无有效结构）禁止回退**，也不得写入 success cycle。 |
 | `activation_models.codex.models` | Codex 自动唤醒模型名称。 |
 | `activation_models.antigravity.models_group` | Antigravity 自动唤醒模型组：`gemini` 或 `claude_gpt`。 |
 | `activation_models.antigravity.models` | 当前 Antigravity 模型组的模型名称。 |
@@ -117,6 +126,8 @@ plugins:
 说明：
 
 - 仍可写带单位的 Go duration（如 `45m`、`2h`、`90s`）。
+- 自动扫描与手动唤醒共用 `Activator.Activate` 内核；`scan_interval` 门闩允许约 2 秒微早触发，避免 timer 抖动静默丢轮。
+- 管理页、诊断与执行历史的 `last_error` / 失败原因均为**纯中文**（旧英文串会映射）。
 
 ## 管理页面与接口
 

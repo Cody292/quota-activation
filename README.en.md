@@ -36,7 +36,8 @@ Load plugin
        - list/get_runtime credentials
        - real quota payload first, then state inference, then fallback
        - skip cycles already marked success
-       - send activation via host.model.execute
+       - share Activator.Activate with manual path
+       - default direct_http (host.http.do); optional scheduler_boost
 ```
 
 ## Build and Installation
@@ -89,6 +90,10 @@ plugins:
       activation_request_timeout: "60"
       max_concurrency: 1
       activation_prompt: "quota activation ping"
+      # default direct_http: host.http.do to upstream; no priority write / scheduler path
+      activation_transport: "direct_http"
+      # fall back to legacy scheduler_boost only on transport/host failures; never on business failures
+      scheduler_boost_fallback: true
       activation_models:
         codex:
           models: "gpt-5-mini"
@@ -97,6 +102,8 @@ plugins:
           models: "gemini-3-flash"
 ```
 
+Plugin version: **0.0.5** (matches `registry.json`).
+
 | Field | Description |
 | :--- | :--- |
 | `enabled` | Plugin switch. Also requires `plugins.enabled: true`. |
@@ -104,8 +111,10 @@ plugins:
 | `enable_before_activation` | When true, enable disabled credentials before activation and keep them enabled. |
 | `scan_interval` | Auto-scan interval in **minutes**. Plain number, no unit required. Default `30`. |
 | `activation_request_timeout` | Activation timeout in **seconds**. Plain number. Default `60`. |
-| `max_concurrency` | Max concurrent activations. Expected value is `1`. |
-| `activation_prompt` | Prompt sent through `host.model.execute`. |
+| `max_concurrency` | Concurrency limit for automatic scan activation (worker pool size). Default `1`. |
+| `activation_prompt` | Activation prompt (`direct_http` body; `scheduler_boost` via `host.model.execute`). |
+| `activation_transport` | Transport: `direct_http` (**default**, via `host.http.do`) or `scheduler_boost` (legacy priority boost + `host.model.execute`). |
+| `scheduler_boost_fallback` | Only when `activation_transport=direct_http`. Default `true`. On **transport/host** failures, may fall back once to `scheduler_boost`. **Business failures / fake 2xx (no valid structure) never fall back** and must not write a success cycle. |
 | `activation_models.codex.models` | Codex model for automatic activation. |
 | `activation_models.antigravity.models_group` | Antigravity group: `gemini` or `claude_gpt`. |
 | `activation_models.antigravity.models` | Model for the selected Antigravity group. |
@@ -113,6 +122,8 @@ plugins:
 Notes:
 
 - Unit-suffixed Go durations such as `45m`, `2h`, and `90s` are still accepted.
+- Auto scan and manual activation share `Activator.Activate`. The `scan_interval` gate allows ~2s early ticks so timer jitter does not drop a round.
+- Management UI, diagnostics, and run history surface **Simplified Chinese** failure text (legacy English strings are mapped).
 
 ## Management Page and API
 
