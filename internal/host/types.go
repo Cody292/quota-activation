@@ -15,11 +15,62 @@ var ErrModelExecuteStatus = errors.New("host model execute status")
 // Client 是配额激活逻辑依赖的最小 CPA 宿主适配接口。
 type Client interface {
 	ModelExecute(ctx context.Context, request ModelExecuteRequest) (ModelExecuteResponse, error)
+	// HTTPDo 通过 host.http.do 发送外部 HTTP 请求（纯传输，不含业务规则）。
+	HTTPDo(ctx context.Context, request HTTPRequest) (HTTPResponse, error)
 	ListAuthFiles(ctx context.Context) ([]AuthFile, error)
 	// GetAuthFile 按 auth_index 读取物理凭证完整 JSON（host.auth.get）。
 	GetAuthFile(ctx context.Context, authIndex string) (AuthFile, error)
 	GetRuntimeAuthFile(ctx context.Context, authIndex string) (AuthFile, error)
 	SaveAuthFile(ctx context.Context, name string, data []byte) error
+}
+
+// Header 是 host.http.do 请求/响应头映射。
+type Header map[string][]string
+
+// HTTPRequest 是 host.http.do 的最小请求形状（Method/URL/Headers/Body）。
+type HTTPRequest struct {
+	Method  string `json:"Method"`
+	URL     string `json:"URL"`
+	Headers Header `json:"Headers,omitempty"`
+	Body    []byte `json:"Body,omitempty"`
+}
+
+// HTTPResponse 是 host.http.do 的最小响应形状。
+type HTTPResponse struct {
+	StatusCode int    `json:"StatusCode"`
+	Headers    Header `json:"Headers,omitempty"`
+	Body       []byte `json:"Body,omitempty"`
+}
+
+// UnmarshalJSON 兼容官方 StatusCode/Headers/Body(base64) 与历史 status_code/body 形态。
+func (r *HTTPResponse) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		StatusCode      *int    `json:"StatusCode"`
+		StatusCodeSnake *int    `json:"status_code"`
+		Headers         Header  `json:"Headers"`
+		HeadersLower    Header  `json:"headers"`
+		Body            *string `json:"Body"`
+		BodyLower       *string `json:"body"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if raw.StatusCode != nil {
+		r.StatusCode = *raw.StatusCode
+	} else if raw.StatusCodeSnake != nil {
+		r.StatusCode = *raw.StatusCodeSnake
+	}
+	if raw.Headers != nil {
+		r.Headers = raw.Headers
+	} else {
+		r.Headers = raw.HeadersLower
+	}
+	body, err := decodeModelExecuteBody(raw.Body, raw.BodyLower)
+	if err != nil {
+		return err
+	}
+	r.Body = body
+	return nil
 }
 
 // ModelExecuteRequest 表示可安全脱敏的 host.model.execute 输入形状。
