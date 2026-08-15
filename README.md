@@ -22,7 +22,9 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
 
 - 支持 **Codex** 与 **Antigravity** 凭证的手动唤醒与自动扫描唤醒。
 - 自动唤醒与手动唤醒配置分离：自动路径仅使用 `auto_activate`、`scan_interval`、`activation_models.*`。
-- 自动额度窗口优先使用真实 `quota_payload`；缺失时按历史成功记录推断，再回退 provider 默认长窗。
+- 自动额度窗口优先使用真实长窗口额度数据。
+- Codex 会忽略 5 小时滚动短窗；缺少真实长窗口时，按套餐合成长窗口（付费 7 天，免费 / 未知 30 天）。
+- Antigravity 仍使用 7 天默认长窗口。
 - 管理页面与诊断接口只展示脱敏信息，不输出 token / 密钥。
 
 ## 工作流程
@@ -34,9 +36,11 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
   -> 手动：用户选择凭证与模型后 POST /activate
   -> 自动：auto_activate=true 时按 scan_interval 扫描
        - host.auth.list / get_runtime 取凭证
-       - 真实额度 payload 优先，否则 state 推断，再兜底长窗
-       - 同 cycle 已 success 则跳过
-       - 与手动共用 Activator.Activate 内核
+       - 真实长窗口额度数据优先
+       - Codex 忽略 5 小时滚动短窗；无真实长窗时按套餐合成（付费 7 天，免费 / 未知 30 天）
+       - Antigravity 保留 7 天默认长窗
+       - 同 cycle 已 success 则跳过（不以 5 小时短窗做硬跳过）
+       - 与手动共用同一套唤醒内核
        - 默认 direct_http（host.http.do）；可选 scheduler_boost
 ```
 
@@ -98,13 +102,11 @@ plugins:
       scheduler_boost_fallback: true
       activation_models:
         codex:
-          models: "gpt-5-mini"
+          models: "gpt-5.4-mini"
         antigravity:
           models_group: "gemini"
           models: "gemini-3-flash"
 ```
-
-当前插件版本：**0.0.5**（与 `registry.json` 一致）。
 
 字段说明：
 

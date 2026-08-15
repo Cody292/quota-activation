@@ -22,7 +22,9 @@ Quota Activation is a CLIProxyAPI (CPA) plugin for quota-reset activation. The p
 
 - Supports manual and automatic activation for **Codex** and **Antigravity** credentials.
 - Keeps automatic and manual configuration separate. Automatic mode only uses `auto_activate`, `scan_interval`, and `activation_models.*`.
-- Prefers real `quota_payload` windows, then infers from successful state history, then falls back to long provider windows.
+- Automatic quota windows prioritize real long-window quota data.
+- Codex ignores 5-hour rolling short windows. When a real long window is absent, it synthesizes one from the plan type (paid 7 days, free or unknown 30 days).
+- Antigravity keeps its 7-day default long window.
 - Management pages and diagnostics expose only redacted information.
 
 ## Workflow
@@ -34,9 +36,11 @@ Load plugin
   -> Manual: user selects credential/model and POSTs /activate
   -> Automatic: when auto_activate=true, scan by scan_interval
        - list/get_runtime credentials
-       - real quota payload first, then state inference, then fallback
-       - skip cycles already marked success
-       - share Activator.Activate with manual path
+       - prefer real long-window quota data
+       - Codex ignores 5-hour rolling short windows; synthesize a long window from the plan (paid 7 days, free/unknown 30 days) when absent
+       - Antigravity keeps the 7-day default long window
+       - skip cycles already marked success (5-hour short windows never hard-skip)
+       - share the same activation core with the manual path
        - default direct_http (host.http.do); optional scheduler_boost
 ```
 
@@ -96,13 +100,11 @@ plugins:
       scheduler_boost_fallback: true
       activation_models:
         codex:
-          models: "gpt-5-mini"
+          models: "gpt-5.4-mini"
         antigravity:
           models_group: "gemini"
           models: "gemini-3-flash"
 ```
-
-Plugin version: **0.0.5** (matches `registry.json`).
 
 | Field | Description |
 | :--- | :--- |
