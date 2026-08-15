@@ -32,14 +32,14 @@ func PreviousStateFromStore(store *state.Store, authID string, provider detector
 }
 
 // shouldHardSkipActiveCycle 在 normalize 之后、真正 wake 之前拦截重复激活。
-// 规则：store 有同 auth+provider LatestSuccess 且 ResetAt.After(now) 时，
+// 规则：store 有同 auth+provider UsableLatestSuccess 且 ResetAt.After(now) 时，
 // 仅当请求带 HasRemaining&&Remaining>0 且 previous 能证明恢复（previous.Remaining<=0 或 current>previous）才放行；
-// 否则 StatusSkipped，不 HTTPDo。
+// 否则 StatusSkipped，不 HTTPDo。Codex 5h success 不参与硬闸。
 func shouldHardSkipActiveCycle(store *state.Store, request Request, now time.Time) (bool, string) {
 	if store == nil {
 		return false, ""
 	}
-	record, ok := store.LatestSuccess(request.AuthID, string(request.Provider))
+	record, ok := store.UsableLatestSuccess(request.AuthID, string(request.Provider))
 	if !ok || record.ResetAt.IsZero() {
 		return false, ""
 	}

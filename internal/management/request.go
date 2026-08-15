@@ -1,7 +1,9 @@
 package management
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,9 +11,10 @@ import (
 	"time"
 
 	"quota-activation/internal/activator"
-	"quota-activation/internal/config"
 	"quota-activation/internal/detector"
-	"quota-activation/internal/state"
+	"quota-activation/internal/host"
+	"quota-activation/internal/planclaim"
+	"quota-activation/internal/quotapayload"
 )
 
 type activationRequest struct {
@@ -51,7 +54,8 @@ func decodeActivationRequest(request *http.Request) (activationRequest, error) {
 
 // toActivatorRequest 解析手动激活请求。store 非空时注入 previous 做周期去重；
 // !Activate 时返回 ok=false（handler 写 skipped，禁止 400 invalid_request）。
-func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.Time, store *state.Store) (activator.Request, bool, error) {
+// Codex 因 5h/unknown 无法 Evaluate 时，按套餐合成 monthly/weekly 再评一次。
+func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bool, error) {
 	provider, err := parseProvider(r.Provider)
 	if err != nil {
 		return activator.Request{}, false, err
@@ -64,17 +68,25 @@ func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.T
 		return activator.Request{}, false, err
 	}
 	model := strings.TrimSpace(r.Model)
-	previous := activator.PreviousStateFromStore(store, r.AuthID, provider)
+	observedAt := h.now().UTC()
+	previous := activator.PreviousStateFromStore(h.store, r.AuthID, provider)
 	if prevKey := strings.TrimSpace(r.PreviousCycleKey); prevKey != "" && previous.CycleKey == "" {
 		previous.CycleKey = prevKey
 	}
-	decision, err := detector.EvaluateWithPrevious(detector.ProbeInput{
+	input := detector.ProbeInput{
 		AuthID:     r.AuthID,
 		Provider:   provider,
 		Model:      model,
 		ObservedAt: observedAt,
 		Payload:    r.QuotaPayload,
-	}, previous)
+	}
+	decision, err := detector.EvaluateWithPrevious(input, previous)
+	if err != nil && provider == detector.ProviderCodex && errors.Is(err, detector.ErrUnknownQuota) {
+		if synthesized, ok := synthesizeCodexLongWindow(h.host, r.AuthID, observedAt); ok {
+			input.Payload = synthesized
+			decision, err = detector.EvaluateWithPrevious(input, previous)
+		}
+	}
 	if err != nil {
 		return activator.Request{}, false, fmt.Errorf("evaluate quota: %w", err)
 	}
@@ -96,6 +108,20 @@ func (r activationRequest) toActivatorRequest(_ config.Config, observedAt time.T
 		return req, false, nil
 	}
 	return req, true, nil
+}
+
+func synthesizeCodexLongWindow(hostClient host.Client, authID string, observedAt time.Time) (json.RawMessage, bool) {
+	plan := planclaim.TypeUnknown
+	if hostClient != nil {
+		if file, getErr := hostClient.GetAuthFile(context.Background(), strings.TrimSpace(authID)); getErr == nil {
+			plan = planclaim.FromAuthJSON(file.Data)
+		}
+	}
+	name, limitSeconds, resetAt, ok := quotapayload.CodexWindowForPlan(plan, observedAt)
+	if !ok {
+		return nil, false
+	}
+	return quotapayload.Marshal(detector.ProviderCodex, nil, name, limitSeconds, resetAt)
 }
 
 func validateManualModelGroup(modelGroup detector.ModelGroup) error {

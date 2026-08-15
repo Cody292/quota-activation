@@ -49,28 +49,37 @@ func (s autoScanSnapshot) autoCandidate(file host.AuthFile, runtimeAuth autoRunt
 	if !ok {
 		return autoCandidate{}, false
 	}
-	payload, ok := autoCandidatePayload(file, document, runtimeAuth, provider, model, authID, s.store, s.now().UTC())
+	payload, ok := autoCandidatePayload(file, document, runtimeAuth, provider, model, authID, s.store, s.now().UTC(), s.host)
 	if !ok {
 		return autoCandidate{}, false
 	}
 	return autoCandidate{authID: authID, provider: provider, model: model, disabled: disabled, payload: payload}, true
 }
 
-func autoCandidatePayload(file host.AuthFile, document autoAuthFileDocument, runtimeAuth autoRuntimeAuthFile, provider detector.Provider, model string, authID string, store *state.Store, observedAt time.Time) ([]byte, bool) {
+func autoCandidatePayload(file host.AuthFile, document autoAuthFileDocument, runtimeAuth autoRuntimeAuthFile, provider detector.Provider, model string, authID string, store *state.Store, observedAt time.Time, hostClient host.Client) ([]byte, bool) {
 	if runtimeAuth.ok {
 		runtimeDocument := decodeAutoAuthFile(runtimeAuth.file)
-		if payload, ok := autoQuotaPayload(runtimeAuth.file, runtimeDocument); ok {
+		if payload, ok := autoQuotaPayload(runtimeAuth.file, runtimeDocument); ok && keepTrueAutoPayload(provider, payload, observedAt) {
 			return payload, true
 		}
 	}
-	if payload, ok := autoQuotaPayload(file, document); ok {
+	if payload, ok := autoQuotaPayload(file, document); ok && keepTrueAutoPayload(provider, payload, observedAt) {
 		return payload, true
 	}
 	if store != nil {
-		if record, ok := store.LatestSuccess(authID, string(provider)); ok {
+		record, ok := store.LatestSuccess(authID, string(provider))
+		if provider == detector.ProviderCodex {
+			record, ok = store.UsableLatestSuccess(authID, string(provider))
+		}
+		if ok {
 			if payload, ok := syntheticInferredQuotaPayload(provider, model, record, observedAt); ok {
 				return payload, true
 			}
+		}
+	}
+	if provider == detector.ProviderCodex {
+		if payload, ok := syntheticCodexPlanPayload(file, model, observedAt, hostClient); ok {
+			return payload, true
 		}
 	}
 	return syntheticAutoQuotaPayload(provider, model, observedAt)

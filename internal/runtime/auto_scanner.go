@@ -484,7 +484,8 @@ func previousStateFromStore(store *state.Store, authID string, provider detector
 }
 
 // shouldHardSkipActiveCycle 在 detector 已判 Activate 时二次拦截：
-// store 有同 auth+provider LatestSuccess，ResetAt.After(now)，且本次不是「额度已恢复」。
+// store 有同 auth+provider UsableLatestSuccess，ResetAt.After(now)，且本次不是「额度已恢复」。
+// Codex 的 5h success 不参与硬闸。
 const autoCycleAlreadyProcessedReason = "额度周期已处理"
 
 func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, decision detector.Decision, observedAt time.Time) (bool, string) {
@@ -499,7 +500,7 @@ func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, deci
 		// 有 remaining 证据时，仅当 previous 也能证明恢复才走到 Activate；
 		// 若 previous 无 remaining 快照，detector 已会 skip；此处再保险：
 		// 若 detector 因 CycleKey 漂移误 Activate，且 success 仍在周期内，则 skip。
-		record, ok := store.LatestSuccess(candidate.authID, string(candidate.provider))
+		record, ok := store.UsableLatestSuccess(candidate.authID, string(candidate.provider))
 		if !ok || record.ResetAt.IsZero() || !record.ResetAt.UTC().After(observedAt.UTC()) {
 			return false, ""
 		}
@@ -512,7 +513,7 @@ func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, deci
 		// success 无 remaining 快照 + 周期未结束 + detector 却 Activate → 强制 skip。
 		return true, autoCycleAlreadyProcessedReason
 	}
-	record, ok := store.LatestSuccess(candidate.authID, string(candidate.provider))
+	record, ok := store.UsableLatestSuccess(candidate.authID, string(candidate.provider))
 	if !ok {
 		return false, ""
 	}

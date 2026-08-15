@@ -38,7 +38,7 @@ func (h *Handler) handleActivate(w http.ResponseWriter, request *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	activation, shouldActivate, err := decoded.toActivatorRequest(h.config, h.now().UTC(), h.store)
+	activation, shouldActivate, err := h.toActivatorRequest(decoded)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
