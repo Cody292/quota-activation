@@ -56,7 +56,7 @@ func parseCodex(payload []byte, observedAt time.Time) (parsedCycle, error) {
 			continue
 		}
 		cycleWindow := classifyWindow(window)
-		if cycleWindow == WindowUnknown {
+		if cycleWindow == WindowUnknown || cycleWindow == WindowFiveHour {
 			continue
 		}
 		rank := windowPreference(cycleWindow)

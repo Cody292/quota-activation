@@ -117,6 +117,17 @@ func (s *Store) Record(key RecordKey) (Record, bool) {
 // LatestSuccess 返回同 auth_id+provider 下最近一次 success 记录（按 ObservedAt，其次 ResetAt）。
 // 供自动唤醒在无真实 quota_payload 时推断计量窗口，以及 Evaluate previous remaining 恢复判定。
 func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
+	return s.pickLatestSuccess(authID, provider, false)
+}
+
+// UsableLatestSuccess 返回同 auth_id+provider 下可用于推断/硬闸的最近一次 success。
+// 选择规则与 LatestSuccess 相同：LastResult=success、非空 Window、非零 ResetAt，按 ObservedAt 再 ResetAt 取最新。
+// Codex 会跳过规范化后等于 5h 的窗口；Antigravity 及其它 provider 保持 LatestSuccess 语义（5h 仍可返回）。
+func (s *Store) UsableLatestSuccess(authID string, provider string) (Record, bool) {
+	return s.pickLatestSuccess(authID, provider, true)
+}
+
+func (s *Store) pickLatestSuccess(authID string, provider string, skipCodexFiveHour bool) (Record, bool) {
 	if s == nil {
 		return Record{}, false
 	}
@@ -125,6 +136,7 @@ func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
 	if authID == "" || provider == "" {
 		return Record{}, false
 	}
+	skipFiveHour := skipCodexFiveHour && strings.EqualFold(provider, "codex")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var best Record
@@ -139,12 +151,26 @@ func (s *Store) LatestSuccess(authID string, provider string) (Record, bool) {
 		if record.Window == "" || record.ResetAt.IsZero() {
 			continue
 		}
+		if skipFiveHour && isFiveHourWindow(record.Window) {
+			continue
+		}
 		if !found || record.ObservedAt.After(best.ObservedAt) || (record.ObservedAt.Equal(best.ObservedAt) && record.ResetAt.After(best.ResetAt)) {
 			best = record
 			found = true
 		}
 	}
 	return best, found
+}
+
+func isFiveHourWindow(window string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(window))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	switch normalized {
+	case "5h", "fivehour", "5hour":
+		return true
+	default:
+		return false
+	}
 }
 
 // LatestSuccessCycle 返回最近一次 success 的 cycle key 与 remaining 快照（只读 helper）。

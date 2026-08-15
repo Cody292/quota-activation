@@ -7,6 +7,7 @@ import (
 
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
+	"quota-activation/internal/planclaim"
 	"quota-activation/internal/state"
 )
 
@@ -51,12 +52,21 @@ func WindowFromSuccess(record state.Record, observedAt time.Time) (name string, 
 	return name, limitSeconds, resetAt, true
 }
 
-// SyntheticWindow 提供商默认窗：Codex=5h，AG=weekly 7d。
+// CodexWindowForPlan 按套餐返回 Codex 长窗（禁止 5h）。
+// TypePaid → weekly 7d；TypeFree / TypeUnknown / 其它 → monthly 30d。
+func CodexWindowForPlan(plan planclaim.Type, observedAt time.Time) (name string, limitSeconds int, resetAt time.Time, ok bool) {
+	observedAt = observedAt.UTC()
+	name, limitSeconds = planclaim.WindowFor(plan)
+	resetAt = StableResetAt(observedAt, time.Duration(limitSeconds)*time.Second)
+	return name, limitSeconds, resetAt, true
+}
+
+// SyntheticWindow 提供商默认窗：Codex 默认 monthly 30d，AG=weekly 7d。
 func SyntheticWindow(provider detector.Provider, observedAt time.Time) (name string, limitSeconds int, resetAt time.Time, ok bool) {
 	observedAt = observedAt.UTC()
 	switch provider {
 	case detector.ProviderCodex:
-		return "5h", 5 * 60 * 60, StableResetAt(observedAt, 5*time.Hour), true
+		return CodexWindowForPlan(planclaim.TypeUnknown, observedAt)
 	case detector.ProviderAntigravity:
 		return "weekly", 7 * 24 * 60 * 60, StableResetAt(observedAt, 7*24*time.Hour), true
 	default:
