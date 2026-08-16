@@ -42,7 +42,7 @@ func (a *Activator) storeResult(ctx context.Context, result Result) (Result, err
 	if a.store == nil {
 		return result, ErrMissingDependency
 	}
-	a.store.Upsert(state.Record{
+	rec := state.Record{
 		AuthID:       result.AuthID,
 		Provider:     result.Provider,
 		Window:       result.Window,
@@ -53,7 +53,11 @@ func (a *Activator) storeResult(ctx context.Context, result Result) (Result, err
 		LastError:    result.LastError,
 		Remaining:    result.Remaining,
 		HasRemaining: result.HasRemaining,
-	})
+	}
+	a.store.Upsert(rec)
+	if result.Status == StatusSuccess && result.Success {
+		a.rememberUsableSuccess(rec)
+	}
 	// 持久化必须不受父 cancel 影响：唤醒网络已成功时，父 scan/HTTP ctx 常已取消。
 	saveCtx, cancel := detachSaveContext(ctx)
 	defer cancel()

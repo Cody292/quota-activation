@@ -34,6 +34,7 @@ type autoScanSnapshot struct {
 	shouldSkipActivateCooldown func(authID string) bool
 	noteActivateCooldown       func(authID, reason string)
 	cooldownSkipReason         func(authID string) string
+	rememberUsable             func(state.Record)
 }
 
 type autoCandidate struct {
@@ -188,6 +189,7 @@ func (r *Runtime) autoSnapshot() (autoScanSnapshot, bool) {
 		shouldSkipActivateCooldown: r.activateCooldownActive,
 		noteActivateCooldown:       r.markActivateCooldownWithReason,
 		cooldownSkipReason:         r.activateCooldownReason,
+		rememberUsable:             r.rememberUsableSuccess,
 	}, true
 }
 
@@ -342,6 +344,7 @@ type autoScanDetail struct {
 	reason     string
 	errMessage string
 	err        error
+	warning    string
 }
 
 func (s autoScanSnapshot) activateCandidate(ctx context.Context, candidate autoCandidate) error {
@@ -406,7 +409,14 @@ func (s autoScanSnapshot) activateCandidateDetail(ctx context.Context, candidate
 		return autoScanDetail{outcome: autoScanOutcomeFailed, reason: msg, errMessage: msg, err: err}
 	}
 	if result.Status == activator.StatusSuccess && result.Success {
-		return autoScanDetail{outcome: autoScanOutcomeSucceeded}
+		if s.rememberUsable != nil {
+			s.rememberUsable(usableRecordFromResult(result))
+		}
+		detail := autoScanDetail{outcome: autoScanOutcomeSucceeded}
+		if result.Warning != "" {
+			detail.warning = result.Warning
+		}
+		return detail
 	}
 	if result.Status == activator.StatusSkipped || result.Status == activator.StatusBusy {
 		reason := decision.Reason

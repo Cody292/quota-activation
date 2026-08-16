@@ -42,6 +42,7 @@ type Runtime struct {
 	// activateCooldownReasonByAuth 冷却 skip 原因（与 schedulerMissUntil 同步）。
 	activateCooldownReasonByAuth map[string]string
 	runHistory                   []RunHistoryEntry
+	lastUsableSuccess            map[usableAuthKey]state.Record
 	shutdown                     bool
 }
 
@@ -155,53 +156,6 @@ func (r *Runtime) Shutdown(ctx context.Context) error {
 	return nil
 }
 
-func (r *Runtime) replaceConfig(ctx context.Context, cfg config.Config) error {
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("runtime configure context: %w", err)
-	}
-	store, err := state.Load(ctx, cfg.StatePath)
-	if err != nil {
-		return err
-	}
-	sessions := session.NewManager(session.Options{Now: r.now})
-	activation := activator.New(activator.Options{Host: r.host, Sessions: sessions, State: store, Config: cfg, Now: r.now, Sleep: r.sleep})
-	// 闭包捕获 Runtime：手动激活写 run_history，diagnostics 读 run_history。
-	manager := management.NewHandler(management.Options{
-		Activator: activation,
-		Host:      r.host,
-		Store:     store,
-		Config:    cfg,
-		Now:       r.now,
-		OnActivation: func(result activator.Result, err error) {
-			r.snapshotActivation(runHistoryTriggerManual, result, err)
-			if err == nil && result.Success && result.Status == activator.StatusSuccess {
-				r.clearSchedulerMissCooldown(result.AuthID)
-			}
-		},
-		RunHistory: func() any {
-			return r.currentRunHistory()
-		},
-	})
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.shutdown {
-		return ErrShutdown
-	}
-	r.config = cfg
-	r.sessions = sessions
-	r.store = store
-	r.activator = activation
-	r.management = manager
-	r.picker = scheduler.NewPicker(sessions)
-	// reconfigure 防抖：AutoActivate 仍 true 且 interval 未变时不 stop+start，避免 immediate 首扫狂刷。
-	if !cfg.AutoActivate {
-		r.stopAutoScannerLocked()
-	} else {
-		r.startAutoScannerLocked(cfg.ScanInterval)
-	}
-	return nil
-}
-
 func (r *Runtime) startAutoScannerLocked(interval time.Duration) {
 	if interval <= 0 {
 		interval = config.Default().ScanInterval
@@ -231,7 +185,7 @@ func registrationResult() RegisterResult {
 		SchemaVersion: 1,
 		Metadata: Metadata{
 			Name:             "quota-activation",
-			Version:          "0.0.6",
+			Version:          "0.0.7",
 			Author:           "Cody292",
 			GitHubRepository: "https://github.com/Cody292/quota-activation",
 			Description:      "Quota reset activation management API and scheduler helper for Codex and Antigravity.",

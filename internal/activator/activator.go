@@ -25,7 +25,9 @@ type Activator struct {
 	// providerLocks 按 provider 串行化 list→boost save→runtime 确认，不跨 ModelExecute。
 	providerLocks map[string]*sync.Mutex
 	// sleep 可注入：sleep(ctx, d) 在 d 内阻塞，ctx 取消返回 false。
-	sleep func(context.Context, time.Duration) bool
+	sleep             func(context.Context, time.Duration) bool
+	usableMu          sync.Mutex
+	lastUsableSuccess map[usableAuthKey]state.Record
 }
 
 // New 构造纯内部激活执行器。
@@ -74,7 +76,7 @@ func (a *Activator) Activate(ctx context.Context, request Request) (Result, erro
 	}
 
 	// 硬闸：manual/auto 共用。周期内已有 success 且未证明 remaining 恢复 → skip，禁止 HTTPDo/boost。
-	if skip, reason := shouldHardSkipActiveCycle(a.store, normalized, a.now().UTC()); skip {
+	if skip, reason := shouldHardSkipActiveCycle(a.hardSkipStore(), normalized, a.now().UTC()); skip {
 		return a.storeResult(ctx, applyHardSkip(result, reason))
 	}
 

@@ -28,6 +28,7 @@ type scanSummaryInput struct {
 	SkipReasons map[string]int
 	FailReasons map[string]int
 	Providers   []RunHistoryProvider
+	Warning     string
 }
 
 type scanSummaryAccumulator struct {
@@ -39,6 +40,7 @@ type scanSummaryAccumulator struct {
 	skipReasons map[string]int
 	failReasons map[string]int
 	byProvider  map[string]*RunHistoryProvider
+	warning     string
 }
 
 func newScanSummaryAccumulator() *scanSummaryAccumulator {
@@ -90,6 +92,9 @@ func (a *scanSummaryAccumulator) add(provider string, detail autoScanDetail) {
 			a.skipReasons[reason]++
 		}
 	}
+	if a.warning == "" && isSaveStateWarningText(detail.warning) {
+		a.warning = strings.TrimSpace(detail.warning)
+	}
 }
 
 func (a *scanSummaryAccumulator) toInput() scanSummaryInput {
@@ -105,6 +110,7 @@ func (a *scanSummaryAccumulator) toInput() scanSummaryInput {
 	return scanSummaryInput{
 		Attempted: a.attempted, Succeeded: a.succeeded, Failed: a.failed, Skipped: a.skipped,
 		SkipReasons: a.skipReasons, FailReasons: a.failReasons, Providers: providers,
+		Warning: a.warning,
 	}
 }
 
@@ -135,7 +141,11 @@ func buildScanSummaryHistoryEntry(in scanSummaryInput, at time.Time) RunHistoryE
 }
 
 func formatScanSummaryMessage(in scanSummaryInput) string {
-	return ""
+	warning := strings.TrimSpace(in.Warning)
+	if warning == "" || !isSaveStateWarningText(warning) {
+		return ""
+	}
+	return warning
 }
 
 func formatTopReasons(label string, reasons map[string]int, maxN int) string {
