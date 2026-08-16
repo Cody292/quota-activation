@@ -111,7 +111,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.6</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.7</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
