@@ -38,11 +38,12 @@ type autoScanSnapshot struct {
 }
 
 type autoCandidate struct {
-	authID   string
-	provider detector.Provider
-	model    string
-	disabled bool
-	payload  []byte
+	authID     string
+	provider   detector.Provider
+	model      string
+	modelGroup detector.ModelGroup
+	disabled   bool
+	payload    []byte
 }
 
 func (r *Runtime) runAutoScanLoop(ctx context.Context) {
@@ -127,11 +128,7 @@ func (r *Runtime) scanAutoCandidates(ctx context.Context) {
 			r.snapshotScanSummary(newScanSummaryAccumulator().toInput())
 			return
 		}
-		candidate, ok := snapshot.autoCandidate(file, runtimeAuth)
-		if !ok {
-			continue
-		}
-		candidates = append(candidates, candidate)
+		candidates = append(candidates, snapshot.autoCandidates(file, runtimeAuth)...)
 	}
 
 	acc := newScanSummaryAccumulator()
@@ -363,7 +360,7 @@ func (s autoScanSnapshot) activateCandidateWithOutcome(ctx context.Context, cand
 
 func (s autoScanSnapshot) activateCandidateDetail(ctx context.Context, candidate autoCandidate) autoScanDetail {
 	observedAt := s.now().UTC()
-	previous := previousStateFromStore(s.store, candidate.authID, candidate.provider)
+	previous := previousStateFromStoreForModelGroup(s.store, candidate.authID, candidate.provider, candidate.modelGroup)
 	decision, err := detector.EvaluateWithPrevious(detector.ProbeInput{
 		AuthID: candidate.authID, Provider: candidate.provider, Model: candidate.model,
 		ObservedAt: observedAt, Payload: candidate.payload,
@@ -389,9 +386,13 @@ func (s autoScanSnapshot) activateCandidateDetail(ctx context.Context, candidate
 		}
 		return autoScanDetail{outcome: autoScanOutcomeSkipped, reason: reason}
 	}
+	modelGroup := decision.Observation.ModelGroup
+	if modelGroup == detector.ModelGroupNone {
+		modelGroup = candidate.modelGroup
+	}
 	result, err := s.activator.Activate(ctx, activator.Request{
 		AuthID: candidate.authID, Provider: candidate.provider,
-		ModelGroup: decision.Observation.ModelGroup, Window: decision.Observation.Window,
+		ModelGroup: modelGroup, Window: decision.Observation.Window,
 		CycleKey: decision.CycleKey, Model: candidate.model, Disabled: candidate.disabled,
 		ObservedAt: observedAt, ResetAt: decision.Observation.ResetAt,
 		Remaining: decision.Observation.Remaining, HasRemaining: decision.Observation.HasRemaining,
@@ -477,22 +478,6 @@ func isHostExecutorUnavailableError(message string) bool {
 		strings.Contains(message, hostExecutorUnavailableCooldownReason)
 }
 
-func previousStateFromStore(store *state.Store, authID string, provider detector.Provider) detector.PreviousState {
-	if store == nil {
-		return detector.PreviousState{}
-	}
-	cycleKey, remaining, hasRemaining, ok := store.LatestSuccessCycle(authID, string(provider))
-	if !ok {
-		return detector.PreviousState{}
-	}
-	if !hasRemaining && remaining != 0 {
-		hasRemaining = true
-	}
-	return detector.PreviousState{
-		CycleKey: cycleKey, Remaining: remaining, HasRemaining: hasRemaining,
-	}
-}
-
 // shouldHardSkipActiveCycle 在 detector 已判 Activate 时二次拦截：
 // store 有同 auth+provider UsableLatestSuccess，ResetAt.After(now)，且本次不是「额度已恢复」。
 // Codex 的 5h success 不参与硬闸。
@@ -510,7 +495,7 @@ func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, deci
 		// 有 remaining 证据时，仅当 previous 也能证明恢复才走到 Activate；
 		// 若 previous 无 remaining 快照，detector 已会 skip；此处再保险：
 		// 若 detector 因 CycleKey 漂移误 Activate，且 success 仍在周期内，则 skip。
-		record, ok := store.UsableLatestSuccess(candidate.authID, string(candidate.provider))
+		record, ok := store.UsableLatestSuccessForModelGroup(candidate.authID, string(candidate.provider), string(candidate.modelGroup))
 		if !ok || record.ResetAt.IsZero() || !record.ResetAt.UTC().After(observedAt.UTC()) {
 			return false, ""
 		}
@@ -523,7 +508,7 @@ func shouldHardSkipActiveCycle(store *state.Store, candidate autoCandidate, deci
 		// success 无 remaining 快照 + 周期未结束 + detector 却 Activate → 强制 skip。
 		return true, autoCycleAlreadyProcessedReason
 	}
-	record, ok := store.UsableLatestSuccess(candidate.authID, string(candidate.provider))
+	record, ok := store.UsableLatestSuccessForModelGroup(candidate.authID, string(candidate.provider), string(candidate.modelGroup))
 	if !ok {
 		return false, ""
 	}

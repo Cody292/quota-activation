@@ -31,6 +31,25 @@ func PreviousStateFromStore(store *state.Store, authID string, provider detector
 	}
 }
 
+// PreviousStateFromStoreForModelGroup 按 auth+provider+modelGroup 读取 previous；空组只匹配无组记录。
+func PreviousStateFromStoreForModelGroup(store *state.Store, authID string, provider detector.Provider, modelGroup detector.ModelGroup) detector.PreviousState {
+	if store == nil {
+		return detector.PreviousState{}
+	}
+	cycleKey, remaining, hasRemaining, ok := store.LatestSuccessCycleForModelGroup(authID, string(provider), string(modelGroup))
+	if !ok {
+		return detector.PreviousState{}
+	}
+	if !hasRemaining && remaining != 0 {
+		hasRemaining = true
+	}
+	return detector.PreviousState{
+		CycleKey:     cycleKey,
+		Remaining:    remaining,
+		HasRemaining: hasRemaining,
+	}
+}
+
 // shouldHardSkipActiveCycle 在 normalize 之后、真正 wake 之前拦截重复激活。
 // 规则：store 有同 auth+provider UsableLatestSuccess 且 ResetAt.After(now) 时，
 // 仅当请求带 HasRemaining&&Remaining>0 且 previous 能证明恢复（previous.Remaining<=0 或 current>previous）才放行；
@@ -39,7 +58,7 @@ func shouldHardSkipActiveCycle(store *state.Store, request Request, now time.Tim
 	if store == nil {
 		return false, ""
 	}
-	record, ok := store.UsableLatestSuccess(request.AuthID, string(request.Provider))
+	record, ok := store.UsableLatestSuccessForModelGroup(request.AuthID, string(request.Provider), string(requestModelGroup(request)))
 	if !ok || record.ResetAt.IsZero() {
 		return false, ""
 	}
@@ -53,6 +72,20 @@ func shouldHardSkipActiveCycle(store *state.Store, request Request, now time.Tim
 		}
 	}
 	return true, cycleAlreadyWokenMessage
+}
+
+func requestModelGroup(request Request) detector.ModelGroup {
+	if request.ModelGroup != detector.ModelGroupNone {
+		return request.ModelGroup
+	}
+	if request.Provider != detector.ProviderAntigravity {
+		return detector.ModelGroupNone
+	}
+	inferred, ok := detector.InferModelGroup(request.Model)
+	if !ok {
+		return detector.ModelGroupNone
+	}
+	return inferred
 }
 
 func recordHasRemainingSnapshot(record state.Record) bool {

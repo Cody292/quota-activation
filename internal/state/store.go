@@ -127,41 +127,6 @@ func (s *Store) UsableLatestSuccess(authID string, provider string) (Record, boo
 	return s.pickLatestSuccess(authID, provider, true)
 }
 
-func (s *Store) pickLatestSuccess(authID string, provider string, skipCodexFiveHour bool) (Record, bool) {
-	if s == nil {
-		return Record{}, false
-	}
-	authID = Redact(strings.TrimSpace(authID))
-	provider = Redact(strings.TrimSpace(provider))
-	if authID == "" || provider == "" {
-		return Record{}, false
-	}
-	skipFiveHour := skipCodexFiveHour && strings.EqualFold(provider, "codex")
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var best Record
-	found := false
-	for _, record := range s.records {
-		if record.AuthID != authID || record.Provider != provider {
-			continue
-		}
-		if !strings.EqualFold(strings.TrimSpace(record.LastResult), "success") {
-			continue
-		}
-		if record.Window == "" || record.ResetAt.IsZero() {
-			continue
-		}
-		if skipFiveHour && isFiveHourWindow(record.Window) {
-			continue
-		}
-		if !found || record.ObservedAt.After(best.ObservedAt) || (record.ObservedAt.Equal(best.ObservedAt) && record.ResetAt.After(best.ResetAt)) {
-			best = record
-			found = true
-		}
-	}
-	return best, found
-}
-
 func isFiveHourWindow(window string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(window))
 	normalized = strings.ReplaceAll(normalized, " ", "")

@@ -100,6 +100,20 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
     .record-message.warn { color: #b45309; }
     .empty-state { text-align: center; padding: 24px 12px; color: #9ca3af; font-size: 14px; }
     @media (max-width: 720px) { .record-providers { grid-template-columns: 1fr; } }
+    .antigravity-groups { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+    @media (max-width: 768px) { .antigravity-groups { grid-template-columns: 1fr; } }
+    .antigravity-group-card { border: 1px solid #d1d5db; border-radius: 10px; padding: 12px; background: #fff; display: flex; flex-direction: column; gap: 6px; }
+    .antigravity-group-card label { margin: 0; font-size: 13px; font-weight: 600; color: #374151; display: flex; align-items: center; justify-content: space-between; }
+    .antigravity-group-card label code { font-size: 11px; }
+    .antigravity-group-card select { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 13px; background: #fff; color: #111827; }
+    .config-preview-box { margin-top: 14px; border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px 16px; background: #f8fafc; }
+    .preview-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+    .preview-title { font-size: 13px; font-weight: 700; color: #111827; }
+    .preview-copy-btn { min-height: 32px; padding: 0 12px; font-size: 12px; }
+    .preview-field { margin-bottom: 8px; }
+    .preview-field:last-child { margin-bottom: 0; }
+    .preview-field label { margin: 0 0 4px; font-size: 12px; font-weight: 500; color: #4b5563; }
+    .preview-field input { background: #fff; font-family: monospace; font-size: 13px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px; color: #111827; }
   </style>
 </head>
 <body>
@@ -111,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.7</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.8</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -140,14 +154,66 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	          <label for="credentialSelect" data-i18n="credential">凭证</label>
 	          <div id="providerTabs" class="provider-tabs"></div>
 	          <div id="credentialSelect" class="select-shell credential-list" role="group" aria-label="credentials"></div>
-	          <label for="modelMenuButton" data-i18n="model">唤醒模型</label>
-	          <div class="model-menu" id="modelSelect">
-	            <button id="modelMenuButton" type="button" class="model-menu-button" onclick="toggleModelMenu()" aria-haspopup="listbox" aria-expanded="false">
-	              <span id="modelMenuLabel">—</span>
-	              <span aria-hidden="true">▾</span>
-	            </button>
-	            <div id="modelMenuPanel" class="model-menu-panel" role="listbox"></div>
+
+	          <div id="singleModelSection">
+	            <label for="modelMenuButton" data-i18n="model">唤醒模型</label>
+	            <div class="model-menu" id="modelSelect">
+	              <button id="modelMenuButton" type="button" class="model-menu-button" onclick="toggleModelMenu()" aria-haspopup="listbox" aria-expanded="false">
+	                <span id="modelMenuLabel">—</span>
+	                <span aria-hidden="true">▾</span>
+	              </button>
+	              <div id="modelMenuPanel" class="model-menu-panel" role="listbox"></div>
+	            </div>
 	          </div>
+
+	          <div id="antigravityModelSection" style="display: none;">
+	            <label data-i18n="antigravityModelGroups">Antigravity 模型组配置（每组最多选一个，可选 0..3 组）</label>
+	            <div class="antigravity-groups">
+	              <div class="antigravity-group-card">
+	                <label for="agSelect_gemini">
+	                  <span data-i18n="antigravityGroupGemini">Gemini 组</span>
+	                  <code>gemini</code>
+	                </label>
+	                <select id="agSelect_gemini" class="antigravity-group-select" data-group="gemini" onchange="onAntigravityGroupChange()">
+	                  <option value="" data-i18n="unselectedOption">— 未选择 —</option>
+	                </select>
+	              </div>
+	              <div class="antigravity-group-card">
+	                <label for="agSelect_claude_gpt">
+	                  <span data-i18n="antigravityGroupClaudeGPT">Claude/GPT 组</span>
+	                  <code>claude_gpt</code>
+	                </label>
+	                <select id="agSelect_claude_gpt" class="antigravity-group-select" data-group="claude_gpt" onchange="onAntigravityGroupChange()">
+	                  <option value="" data-i18n="unselectedOption">— 未选择 —</option>
+	                </select>
+	              </div>
+	              <div class="antigravity-group-card">
+	                <label for="agSelect_gemini_4_argon">
+	                  <span data-i18n="antigravityGroupArgon">Gemini 4 Argon 组</span>
+	                  <code>gemini_4_argon</code>
+	                </label>
+	                <select id="agSelect_gemini_4_argon" class="antigravity-group-select" data-group="gemini_4_argon" onchange="onAntigravityGroupChange()">
+	                  <option value="" data-i18n="unselectedOption">— 未选择 —</option>
+	                </select>
+	              </div>
+	            </div>
+
+	            <div class="config-preview-box">
+	              <div class="preview-header">
+	                <span class="preview-title" data-i18n="configPreview">配置预览 (只读)</span>
+	                <button id="copyConfigButton" type="button" class="secondary preview-copy-btn" onclick="copyAntigravityConfig()" data-i18n="copyConfig">复制配置值</button>
+	              </div>
+	              <div class="preview-field">
+	                <label for="previewModelsGroup"><code>activation_models.antigravity.models_group</code></label>
+	                <input id="previewModelsGroup" type="text" readonly placeholder="例如: gemini|claude_gpt|gemini_4_argon" onclick="copyFieldValue(this)">
+	              </div>
+	              <div class="preview-field">
+	                <label for="previewModels"><code>activation_models.antigravity.models</code></label>
+	                <input id="previewModels" type="text" readonly placeholder="例如: gemini-2.5-pro|claude-3-7-sonnet|gemini-4-argon" onclick="copyFieldValue(this)">
+	              </div>
+	            </div>
+	          </div>
+
 	          <div class="actions">
 	            <button id="refreshCredentialsButton" type="button" class="secondary" data-i18n="refresh" onclick="loadAuthFiles(this)">刷新凭证</button>
 	            <button id="manualActivateButton" type="button" data-i18n="activate" onclick="triggerActivation(this)">手动触发唤醒</button>
@@ -181,9 +247,10 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	            <p data-i18n="helpActivationModelsDesc">直接填写模型名称，不需要填写 JSON 对象：</p>
 	            <ul>
 	              <li><code>activation_models.codex.models</code>: <span data-i18n="helpCodexModels">Codex 自动唤醒模型名称，例如 <code>gpt-5-mini</code>。</span></li>
-	              <li><code>activation_models.antigravity.models_group</code>: <span data-i18n="helpAntigravityGroup">Antigravity 自动唤醒模型组，可选 <code>gemini</code> 或 <code>claude_gpt</code>。</span></li>
-	              <li><code>activation_models.antigravity.models</code>: <span data-i18n="helpAntigravityModels">当前 Antigravity 模型组的模型名称。</span></li>
+	              <li><code>activation_models.antigravity.models_group</code>: <span data-i18n="helpAntigravityGroup">Antigravity 自动唤醒模型组，可选 <code>gemini</code>、<code>claude_gpt</code> 或 <code>gemini_4_argon</code>。</span></li>
+	              <li><code>activation_models.antigravity.models</code>: <span data-i18n="helpAntigravityModels">当前 Antigravity 模型组的模型名称，仍是所选的单个模型名。</span></li>
 	            </ul>
+	            <p data-i18n="helpAntigravityMultiGroupDesc">同一凭证支持同时选择多个模型组，生成固定顺序（<code>gemini|claude_gpt|gemini_4_argon</code>）的 <code>models_group</code> 与 <code>models</code> 预览。<code>|</code> 为位置配对符号，每组仅对应一个模型；旧单值配置完全兼容；不支持逗号或数组格式。Argon 模型保留在独立的 <code>gemini_4_argon</code> 组。</p>
 	          </div>
 	        </div>
 	      </div>
@@ -238,8 +305,18 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpMaxConcurrency: "可选；自动扫描与激活的并发上限（worker 池大小），默认 1。",
 	        helpActivationPrompt: "可选；唤醒提示词。",
 	        helpCodexModels: "Codex 自动唤醒模型名称，例如 gpt-5-mini。",
-	        helpAntigravityGroup: "Antigravity 自动唤醒模型组，可选 gemini 或 claude_gpt。",
-	        helpAntigravityModels: "当前 Antigravity 模型组的模型名称。",
+	        helpAntigravityGroup: "Antigravity 自动唤醒模型组，可选 gemini、claude_gpt 或 gemini_4_argon。",
+	        helpAntigravityModels: "当前 Antigravity 模型组的模型名称，仍是所选的单个模型名。",
+	        antigravityModelGroups: "Antigravity 模型组配置（每组最多选一个，可选 0..3 组）",
+	        configPreview: "配置预览 (只读)",
+	        copyConfig: "复制配置值",
+	        copyConfigSuccess: "已复制配置到剪贴板",
+	        unselectedOption: "— 未选择 —",
+	        antigravityGroupGemini: "Gemini 组",
+	        antigravityGroupClaudeGPT: "Claude/GPT 组",
+	        antigravityGroupArgon: "Gemini 4 Argon 组",
+	        helpAntigravityMultiGroupDesc: "同一凭证支持同时选择多个模型组，生成固定顺序（gemini|claude_gpt|gemini_4_argon）的 models_group 与 models 预览。| 为位置配对符号，每组仅对应一个模型；旧单值配置完全兼容；不支持逗号或数组格式。Argon 模型保留在独立的 gemini_4_argon 组。",
+	        activationSummary: "手动唤醒完成：成功 {success}，失败 {failed}",
 	        recordsTab: "执行记录",
 	        recordsTitle: "执行记录",
 	        recordsHint: "进程内最近 5 次（重启清空）",
@@ -300,8 +377,18 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        helpMaxConcurrency: "Optional; concurrency limit for automatic scan activation (worker pool size); default 1.",
 	        helpActivationPrompt: "Optional; activation prompt text.",
 	        helpCodexModels: "Codex automatic activation model name, for example gpt-5-mini.",
-	        helpAntigravityGroup: "Antigravity automatic activation model group: gemini or claude_gpt.",
-	        helpAntigravityModels: "Model name for the current Antigravity model group.",
+	        helpAntigravityGroup: "Antigravity automatic activation model group: gemini, claude_gpt, or gemini_4_argon.",
+	        helpAntigravityModels: "Model name for the current Antigravity model group (still the selected single model name).",
+	        antigravityModelGroups: "Antigravity Model Groups (up to 1 per group, 0..3 groups selectable)",
+	        configPreview: "Configuration Preview (Read-only)",
+	        copyConfig: "Copy Config Values",
+	        copyConfigSuccess: "Configuration copied to clipboard",
+	        unselectedOption: "— None —",
+	        antigravityGroupGemini: "Gemini Group",
+	        antigravityGroupClaudeGPT: "Claude/GPT Group",
+	        antigravityGroupArgon: "Gemini 4 Argon Group",
+	        helpAntigravityMultiGroupDesc: "The same credential supports selecting multiple model groups simultaneously, generating '|'-separated models_group and models strings (fixed order: gemini|claude_gpt|gemini_4_argon). Unselected groups are omitted; single-group configs remain fully compatible; do not use arrays or commas.",
+	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed",
 	        recordsTab: "Execution Records",
 	        recordsTitle: "Execution Records",
 	        recordsHint: "Last 5 runs in process (cleared on restart)",
@@ -318,7 +405,17 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        statSucceeded: "Succeeded",
 	        statFailed: "Failed",
 	        statSkipped: "Skipped",
-	        loadingRecords: "Refreshing..."
+	        loadingRecords: "Refreshing...",
+	        antigravityModelGroups: "Antigravity Model Groups (up to 1 model per group, 0..3 groups)",
+	        configPreview: "Config Preview (Read-only)",
+	        copyConfig: "Copy Config Values",
+	        copyConfigSuccess: "Config copied to clipboard",
+	        unselectedOption: "— Unselected —",
+	        antigravityGroupGemini: "Gemini Group",
+	        antigravityGroupClaudeGPT: "Claude/GPT Group",
+	        antigravityGroupArgon: "Gemini 4 Argon Group",
+	        helpAntigravityMultiGroupDesc: "Supports selecting multiple model groups simultaneously for the same credential, generating models_group and models previews in a fixed order (gemini|claude_gpt|gemini_4_argon). | is used for position-based pairing with exactly one model per group. Fully backward-compatible with legacy single-value configs. Comma and array formats are not supported. Argon models are retained in the dedicated gemini_4_argon group.",
+	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed"
 	      }
 	    };
 	    let language = "zh-CN";
@@ -408,8 +505,22 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        }
 	      }
 	    }
-	    function modelChoicesForCredential(credential, models) { const choices = []; for (const item of models) { const value = String((item && (item.id || item.name || item.value)) || "").trim(); if (!value) { continue; } if (credential.provider === "antigravity") { const group = antigravityModelGroup(value); if (!group) { continue; } choices.push({ value, label: (group === "gemini" ? "Gemini" : "Claude/GPT") + " · " + value, group }); } else { choices.push({ value, label: "Codex · " + value }); } } return choices; }
-	    function antigravityModelGroup(model) { const lower = String(model || "").toLowerCase(); if (lower.includes("gemini")) { return "gemini"; } if (lower.includes("claude") || lower.includes("gpt")) { return "claude_gpt"; } return ""; }
+	    function modelChoicesForCredential(credential, models) {
+	      const choices = [];
+	      for (const item of models) {
+	        const value = String((item && (item.id || item.name || item.value)) || "").trim();
+	        if (!value) { continue; }
+	        if (credential.provider === "antigravity") {
+	          const group = (item && (item.group || item.Group)) || antigravityModelGroup(value);
+	          if (!group) { continue; }
+	          choices.push({ value, label: (item && item.label) || ((group === "gemini_4_argon" ? "Gemini 4 Argon" : (group === "gemini" ? "Gemini" : "Claude/GPT")) + " · " + value), group });
+	        } else {
+	          choices.push({ value, label: (item && item.label) || ("Codex · " + value) });
+	        }
+	      }
+	      return choices;
+	    }
+	    function antigravityModelGroup(model) { const normalized = String(model || "").toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g, " ").trim(); if (normalized.includes("gemini 4 argon")) { return "gemini_4_argon"; } if (normalized.includes("gemini")) { return "gemini"; } if (normalized.includes("claude") || normalized.includes("gpt")) { return "claude_gpt"; } return ""; }
 	    function switchTab(tab) {
 	      document.getElementById("manualTabButton").classList.toggle("active", tab === "manual");
 	      document.getElementById("recordsTabButton").classList.toggle("active", tab === "records");
@@ -527,12 +638,72 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      }
 	      setModelMenuOpen(false);
 	    }
+	    const ANTIGRAVITY_GROUP_ORDER = ["gemini", "claude_gpt", "gemini_4_argon"];
+
+	    function selectedAntigravityPairs() {
+	      const pairs = [];
+	      for (const group of ANTIGRAVITY_GROUP_ORDER) {
+	        const el = document.getElementById("agSelect_" + group);
+	        const val = el ? el.value.trim() : "";
+	        if (val) {
+	          pairs.push({ group, model: val });
+	        }
+	      }
+	      return pairs;
+	    }
+
+	    function generateAntigravityPreview() {
+	      const pairs = selectedAntigravityPairs();
+	      const modelsGroup = pairs.map((p) => p.group).join("|");
+	      const models = pairs.map((p) => p.model).join("|");
+	      return { models_group: modelsGroup, models: models, pairs };
+	    }
+
+	    function updateAntigravityPreview() {
+	      const preview = generateAntigravityPreview();
+	      const groupInput = document.getElementById("previewModelsGroup");
+	      const modelsInput = document.getElementById("previewModels");
+	      if (groupInput) { groupInput.value = preview.models_group; }
+	      if (modelsInput) { modelsInput.value = preview.models; }
+	      return preview;
+	    }
+
+	    function onAntigravityGroupChange() {
+	      updateAntigravityPreview();
+	    }
+
+	    function copyAntigravityConfig() {
+	      const preview = updateAntigravityPreview();
+	      const textToCopy = "models_group: " + preview.models_group + "\nmodels: " + preview.models;
+	      if (navigator.clipboard && navigator.clipboard.writeText) {
+	        navigator.clipboard.writeText(textToCopy).then(() => {
+	          message(textFor("copyConfigSuccess"));
+	        }).catch(() => {
+	          message(preview.models_group ? (preview.models_group + " | " + preview.models) : textFor("noModels"));
+	        });
+	      } else {
+	        message(preview.models_group ? (preview.models_group + " | " + preview.models) : textFor("noModels"));
+	      }
+	    }
+
+	    function copyFieldValue(input) {
+	      if (!input || !input.value) { return; }
+	      input.select();
+	      if (navigator.clipboard && navigator.clipboard.writeText) {
+	        navigator.clipboard.writeText(input.value).then(() => {
+	          message(textFor("copyConfigSuccess"));
+	        }).catch(() => {});
+	      }
+	    }
+
 	    function syncModelOptions() {
+	      const isAntigravity = (activeProvider === "antigravity");
+	      const singleSection = document.getElementById("singleModelSection");
+	      const agSection = document.getElementById("antigravityModelSection");
+	      if (singleSection) { singleSection.style.display = isAntigravity ? "none" : ""; }
+	      if (agSection) { agSection.style.display = isAntigravity ? "" : "none"; }
+
 	      const credentials = selectedCredentials();
-	      const panel = document.getElementById("modelMenuPanel");
-	      if (!panel) { return; }
-	      const selectedVal = selectedModel ? selectedModel.value : "";
-	      panel.innerHTML = "";
 	      const seen = new Set();
 	      const choices = [];
 	      for (const credential of credentials) {
@@ -544,30 +715,68 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	          }
 	        }
 	      }
-	      const selectedGroup = selectedModel ? selectedModel.group : "";
-	      for (const item of choices) {
-	        const option = document.createElement("button");
-	        option.type = "button";
-	        option.disabled = Boolean(selectedGroup && item.group && item.group !== selectedGroup);
-	        option.className = "model-option" + (item.value === selectedVal ? " active" : "") + (option.disabled ? " disabled" : "");
-	        option.dataset.value = item.value;
-	        option.dataset.group = item.group || "";
-	        option.textContent = item.label || item.value;
-	        option.onclick = () => { if (option.disabled) { return; } chooseModel(item.value, item.group || "", item.label || item.value); };
-	        panel.appendChild(option);
-	      }
-	      if (choices.length === 0) {
-	        chooseModel("", "", "—");
-	      } else if (!choices.some((item) => item.value === selectedVal)) {
-	        chooseModel(choices[0].value, choices[0].group || "", choices[0].label || choices[0].value);
+
+	      if (isAntigravity) {
+	        for (const group of ANTIGRAVITY_GROUP_ORDER) {
+	          const select = document.getElementById("agSelect_" + group);
+	          if (!select) { continue; }
+	          const prevVal = select.value;
+	          select.innerHTML = "";
+	          const defaultOpt = document.createElement("option");
+	          defaultOpt.value = "";
+	          defaultOpt.textContent = textFor("unselectedOption");
+	          select.appendChild(defaultOpt);
+
+	          const groupChoices = choices.filter((item) => item.group === group);
+	          for (const item of groupChoices) {
+	            const opt = document.createElement("option");
+	            opt.value = item.value;
+	            opt.textContent = item.value;
+	            select.appendChild(opt);
+	          }
+
+	          if (prevVal && groupChoices.some((item) => item.value === prevVal)) {
+	            select.value = prevVal;
+	          } else {
+	            select.value = "";
+	          }
+	        }
+	        updateAntigravityPreview();
+
+	        if (credentials.length > 0 && choices.length === 0) {
+	          const hasEnabled = credentials.some((credential) => credential && !credential.disabled);
+	          if (hasEnabled) {
+	            message(textFor("noModels"));
+	          }
+	        }
 	      } else {
-	        const current = choices.find((item) => item.value === selectedVal);
-	        chooseModel(current.value, current.group || "", current.label || current.value);
-	      }
-	      if (credentials.length > 0 && choices.length === 0) {
-	        const hasEnabled = credentials.some((credential) => credential && !credential.disabled);
-	        if (hasEnabled) {
-	          message(textFor("noModels"));
+	        const panel = document.getElementById("modelMenuPanel");
+	        if (!panel) { return; }
+	        const selectedVal = selectedModel ? selectedModel.value : "";
+	        panel.innerHTML = "";
+	        for (const item of choices) {
+	          const option = document.createElement("button");
+	          option.type = "button";
+	          option.className = "model-option" + (item.value === selectedVal ? " active" : "");
+	          option.dataset.value = item.value;
+	          option.dataset.group = item.group || "";
+	          option.textContent = item.label || item.value;
+	          option.onclick = () => { chooseModel(item.value, item.group || "", item.label || item.value); };
+	          panel.appendChild(option);
+	        }
+	        if (choices.length === 0) {
+	          chooseModel("", "", "—");
+	        } else if (!choices.some((item) => item.value === selectedVal)) {
+	          chooseModel(choices[0].value, choices[0].group || "", choices[0].label || choices[0].value);
+	        } else {
+	          const current = choices.find((item) => item.value === selectedVal);
+	          chooseModel(current.value, current.group || "", current.label || current.value);
+	        }
+	        if (credentials.length > 0 && choices.length === 0) {
+	          const hasEnabled = credentials.some((credential) => credential && !credential.disabled);
+	          if (hasEnabled) {
+	            message(textFor("noModels"));
+	          }
 	        }
 	      }
 	    }
@@ -592,11 +801,33 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        message(textFor("missingCredential"));
 	        return;
 	      }
-	      const modelOption = selectedModelOption();
-	      if (!modelOption) {
-	        message(textFor("missingModel"));
-	        return;
+
+	      const isAntigravity = (activeProvider === "antigravity");
+	      let targets = [];
+	      if (isAntigravity) {
+	        const pairs = selectedAntigravityPairs();
+	        if (pairs.length === 0) {
+	          message(textFor("missingModel"));
+	          return;
+	        }
+	        targets = pairs.map((p) => ({
+	          model_group: p.group,
+	          model: p.model,
+	          option: { value: p.model, dataset: { group: p.group } }
+	        }));
+	      } else {
+	        const modelOption = selectedModelOption();
+	        if (!modelOption) {
+	          message(textFor("missingModel"));
+	          return;
+	        }
+	        targets = [{
+	          model_group: modelOption.dataset.group || "",
+	          model: modelOption.value,
+	          option: modelOption
+	        }];
 	      }
+
 	      const actBtn = button || document.getElementById("manualActivateButton");
 	      const refBtn = document.getElementById("refreshCredentialsButton");
 	      const actState = setButtonBusy(actBtn, "activationRunning");
@@ -610,33 +841,42 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        let failedCount = 0;
 	        let lastError = null;
 	        for (const credential of credentials) {
-	          const payload = {
-	            auth_id: credential.auth_id,
-	            provider: credential.provider,
-	            model_group: modelOption.dataset.group || "",
-	            model: modelOption.value,
-	            disabled: Boolean(credential.disabled),
-	            quota_payload: quotaPayloadForActivation(credential, modelOption)
-	          };
-	          try {
-	            await managementFetch(ACTIVATE_PATH, {
-	              method: "POST",
-	              body: JSON.stringify(payload)
-	            });
-	            successCount++;
-	          } catch (error) {
-	            failedCount++;
-	            lastError = error;
+	          for (const target of targets) {
+	            const payload = {
+	              auth_id: credential.auth_id,
+	              provider: credential.provider,
+	              model_group: target.model_group,
+	              model: target.model,
+	              disabled: Boolean(credential.disabled),
+	              quota_payload: quotaPayloadForActivation(credential, target.option)
+	            };
+	            try {
+	              await managementFetch(ACTIVATE_PATH, {
+	                method: "POST",
+	                body: JSON.stringify(payload)
+	              });
+	              successCount++;
+	            } catch (error) {
+	              failedCount++;
+	              lastError = error;
+	            }
 	          }
 	        }
 	        if (failedCount === 0) {
 	          message(textFor("activationDone"));
-	        } else {
+	        } else if (successCount === 0 && targets.length === 1 && credentials.length === 1) {
 	          if (lastError && (lastError.message === textFor("missingCredential") || lastError.message === textFor("missingModel"))) {
 	            message(lastError.message);
 	          } else {
 	            message(activationErrorMessage(lastError));
 	          }
+	        } else {
+	          const summaryTpl = textFor("activationSummary") || (language === "zh-CN" ? "手动唤醒完成：成功 {success}，失败 {failed}" : "Manual activation completed: {success} succeeded, {failed} failed");
+	          let summaryText = summaryTpl.replace("{success}", String(successCount)).replace("{failed}", String(failedCount));
+	          if (lastError) {
+	            summaryText += " (" + activationErrorMessage(lastError) + ")";
+	          }
+	          message(summaryText);
 	        }
 	      } catch (error) {
 	        message(activationErrorMessage(error));

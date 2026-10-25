@@ -20,12 +20,12 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
 
 ## 功能概览
 
-- 支持 **Codex** 与 **Antigravity** 凭证的手动唤醒与自动扫描唤醒。
+- 支持 **Codex** 与 **Antigravity**（含 `gemini`、`claude_gpt` 与 `gemini_4_argon` 独立模型组）凭证的手动唤醒与自动扫描唤醒。
 - 自动唤醒与手动唤醒配置分离：自动路径仅使用 `auto_activate`、`scan_interval`、`activation_models.*`。
 - 自动额度窗口优先使用真实长窗口额度数据。
-- Codex 会忽略 5 小时滚动短窗；缺少真实长窗口时，按套餐合成长窗口（付费 7 天，免费 / 未知 30 天）。
-- Antigravity 仍使用 7 天默认长窗口。
-- 管理页面与诊断接口只展示脱敏信息，不输出 token / 密钥。
+- Codex 自动解析凭据推断套餐类型，忽略 5 小时滚动短窗；缺少真实长窗口时，按套餐合成长窗口（付费 7 天，免费 / 未知 30 天）。
+- Antigravity 仍使用 7 天默认长窗口，支持多组位置配对配置。
+- 管理页面支持中英双语、执行记录查看与操作防重保护，全链路脱敏保障凭据安全。
 
 ## 工作流程
 
@@ -104,6 +104,7 @@ plugins:
         codex:
           models: "gpt-5.4-mini"
         antigravity:
+          # 支持单组（如 "gemini" / "gemini-3-flash"）或 1~3 个模型组（用 | 分隔并按位置配对，如 "gemini|gemini_4_argon" 与 "gemini-3-flash|gemini-4-argon"；每个组只能一个模型，不支持数组/逗号）
           models_group: "gemini"
           models: "gemini-3-flash"
 ```
@@ -122,8 +123,8 @@ plugins:
 | `activation_transport` | 唤醒传输方式：`direct_http`（**默认**，`host.http.do` 直连）或 `scheduler_boost`（legacy：临时提升 priority + `host.model.execute`）。 |
 | `scheduler_boost_fallback` | 仅当 `activation_transport=direct_http` 时生效；默认 `true`。遇**传输/宿主类**失败可回退一次 `scheduler_boost`；**业务失败 / 假 2xx（无有效结构）禁止回退**，也不得写入 success cycle。 |
 | `activation_models.codex.models` | Codex 自动唤醒模型名称。 |
-| `activation_models.antigravity.models_group` | Antigravity 自动唤醒模型组：`gemini` 或 `claude_gpt`。 |
-| `activation_models.antigravity.models` | 当前 Antigravity 模型组的模型名称。 |
+| `activation_models.antigravity.models_group` | Antigravity 自动唤醒模型组（`gemini`、`claude_gpt`、`gemini_4_argon`）。支持 1~3 个模型组并用 `\|` 分隔，与 `models` 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。 |
+| `activation_models.antigravity.models` | Antigravity 自动唤醒模型名称。多组时同样用 `\|` 分隔并与 `models_group` 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。 |
 
 说明：
 

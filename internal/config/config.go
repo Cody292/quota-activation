@@ -51,12 +51,6 @@ type CodexActivationModels struct {
 	Models string
 }
 
-// AntigravityActivationModels 定义 Antigravity 不同模型组的唤醒模型。
-type AntigravityActivationModels struct {
-	ModelsGroup string
-	Models      string
-}
-
 type rawConfig struct {
 	Enabled                  *bool                `json:"enabled"`
 	Priority                 *int                 `json:"priority"`
@@ -79,15 +73,6 @@ type rawActivationModels struct {
 
 type rawCodexActivationModels struct {
 	Models *string `json:"models"`
-}
-
-type rawAntigravityModelsGroup struct {
-	ModelsGroup     *string `json:"models_group"`
-	Models          *string `json:"models"`
-	Gemini          *string `json:"gemini"`
-	ClaudeGPT       *string `json:"claude_gpt"`
-	EnableGemini    *bool   `json:"enable_gemini"`
-	EnableClaudeGPT *bool   `json:"enable_claude_gpt"`
 }
 
 // Default 返回稳定默认配置。
@@ -239,74 +224,6 @@ func (raw *rawActivationModels) parse(base ActivationModels) (ActivationModels, 
 		if err != nil {
 			return ActivationModels{}, err
 		}
-	}
-	return models, nil
-}
-
-func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) (AntigravityActivationModels, error) {
-	models := base
-	if raw.ModelsGroup != nil || raw.Models != nil {
-		if raw.ModelsGroup != nil {
-			models.ModelsGroup = strings.TrimSpace(*raw.ModelsGroup)
-		}
-		if raw.Models != nil {
-			models.Models = strings.TrimSpace(*raw.Models)
-		}
-		return validateAntigravityModels(models)
-	}
-
-	legacy := legacyAntigravityModels{}
-	if raw.Gemini != nil {
-		legacy.gemini = strings.TrimSpace(*raw.Gemini)
-	}
-	if raw.ClaudeGPT != nil {
-		legacy.claudeGPT = strings.TrimSpace(*raw.ClaudeGPT)
-	}
-	if raw.EnableGemini != nil {
-		legacy.enableGemini = *raw.EnableGemini
-	}
-	if raw.EnableClaudeGPT != nil {
-		legacy.enableClaudeGPT = *raw.EnableClaudeGPT
-	}
-	if legacy.enableGemini && legacy.enableClaudeGPT {
-		return AntigravityActivationModels{}, invalid("activation_models.antigravity", "Gemini 与 Claude/GPT 只能启用一种")
-	}
-	if legacy.enableGemini && legacy.gemini == "" {
-		return AntigravityActivationModels{}, invalid("activation_models.antigravity.gemini", "启用 Gemini 组时必须填写")
-	}
-	if legacy.enableClaudeGPT && legacy.claudeGPT == "" {
-		return AntigravityActivationModels{}, invalid("activation_models.antigravity.claude_gpt", "启用 Claude/GPT 组时必须填写")
-	}
-	if legacy.enableGemini {
-		models.ModelsGroup = "gemini"
-		models.Models = legacy.gemini
-	}
-	if legacy.enableClaudeGPT {
-		models.ModelsGroup = "claude_gpt"
-		models.Models = legacy.claudeGPT
-	}
-	return models, nil
-}
-
-type legacyAntigravityModels struct {
-	gemini          string
-	claudeGPT       string
-	enableGemini    bool
-	enableClaudeGPT bool
-}
-
-func validateAntigravityModels(models AntigravityActivationModels) (AntigravityActivationModels, error) {
-	switch models.ModelsGroup {
-	case "":
-		if models.Models != "" {
-			return AntigravityActivationModels{}, invalid("activation_models.antigravity.models_group", "填写模型名时必须选择模型组")
-		}
-	case "gemini", "claude_gpt":
-		if models.Models == "" {
-			return AntigravityActivationModels{}, invalid("activation_models.antigravity.models", "选择模型组时必须填写")
-		}
-	default:
-		return AntigravityActivationModels{}, invalid("activation_models.antigravity.models_group", "必须是 gemini 或 claude_gpt")
 	}
 	return models, nil
 }

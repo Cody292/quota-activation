@@ -251,14 +251,11 @@ func activationStringSliceFromMap(values map[string]any, key string) []string {
 }
 
 func antigravityModelGroup(model string) detector.ModelGroup {
-	lower := strings.ToLower(model)
-	if strings.Contains(lower, "gemini") {
-		return detector.ModelGroupGemini
+	group, ok := detector.InferModelGroup(model)
+	if !ok {
+		return detector.ModelGroupNone
 	}
-	if strings.Contains(lower, "claude") || strings.Contains(lower, "gpt") {
-		return detector.ModelGroupClaudeGPT
-	}
-	return detector.ModelGroupNone
+	return group
 }
 
 const usageLimitReachedType = "usage_limit_reached"

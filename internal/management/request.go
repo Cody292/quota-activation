@@ -69,7 +69,7 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 	}
 	model := strings.TrimSpace(r.Model)
 	observedAt := h.now().UTC()
-	previous := activator.PreviousStateFromStore(h.store, r.AuthID, provider)
+	previous := activator.PreviousStateFromStoreForModelGroup(h.store, r.AuthID, provider, modelGroup)
 	if prevKey := strings.TrimSpace(r.PreviousCycleKey); prevKey != "" && previous.CycleKey == "" {
 		previous.CycleKey = prevKey
 	}
@@ -126,7 +126,7 @@ func synthesizeCodexLongWindow(hostClient host.Client, authID string, observedAt
 
 func validateManualModelGroup(modelGroup detector.ModelGroup) error {
 	switch modelGroup {
-	case detector.ModelGroupGemini, detector.ModelGroupClaudeGPT, detector.ModelGroupNone:
+	case detector.ModelGroupGemini, detector.ModelGroupClaudeGPT, detector.ModelGroupGemini4Argon, detector.ModelGroupNone:
 		return nil
 	default:
 		return fmt.Errorf("model_group is unsupported")
@@ -162,6 +162,8 @@ func parseModelGroup(provider detector.Provider, raw string, requestedModel stri
 		return detector.ModelGroupGemini, nil
 	case detector.ModelGroupClaudeGPT:
 		return detector.ModelGroupClaudeGPT, nil
+	case detector.ModelGroupGemini4Argon:
+		return detector.ModelGroupGemini4Argon, nil
 	case detector.ModelGroupNone:
 		return detector.ModelGroupNone, fmt.Errorf("model_group is required for antigravity when model is empty")
 	default:

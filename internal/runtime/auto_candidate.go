@@ -34,29 +34,62 @@ type autoRuntimeAuthFile struct {
 }
 
 func (s autoScanSnapshot) autoCandidate(file host.AuthFile, runtimeAuth autoRuntimeAuthFile) (autoCandidate, bool) {
+	candidates := s.autoCandidates(file, runtimeAuth)
+	if len(candidates) == 0 {
+		return autoCandidate{}, false
+	}
+	return candidates[0], true
+}
+
+func (s autoScanSnapshot) autoCandidates(file host.AuthFile, runtimeAuth autoRuntimeAuthFile) []autoCandidate {
 	document := decodeAutoAuthFile(file)
 	// 宿主 scheduler 候选 Auth.ID 与 host.auth.list 的 id/name（文件名）一致；auth_index 哈希不得优先，否则 pick 命中失败。
 	authID := firstNonBlankAuto(file.ID, file.Name, document.Name, document.ID, document.AuthID, document.AuthIDUpper, file.AuthIndex)
 	provider, ok := autoProvider(firstNonBlankAuto(file.Provider, file.Type, document.Provider, document.Type))
 	if !ok || authID == "" {
-		return autoCandidate{}, false
+		return nil
 	}
 	disabled := file.Disabled || document.Disabled
 	if disabled && !s.config.EnableBeforeActivation {
-		return autoCandidate{}, false
+		return nil
 	}
-	model, ok := autoModel(s.config, provider, autoCandidateModels(file, document, runtimeAuth))
+	available := autoCandidateModels(file, document, runtimeAuth)
+	observedAt := s.now().UTC()
+	if provider == detector.ProviderAntigravity {
+		pairs := autoAntigravityModels(s.config, available)
+		out := make([]autoCandidate, 0, len(pairs))
+		for _, pair := range pairs {
+			payload, ok := autoCandidatePayloadWithGroup(file, document, runtimeAuth, provider, pair.Model, authID, s.store, observedAt, s.host, string(antigravityPairModelGroup(pair)))
+			if !ok {
+				continue
+			}
+			out = append(out, autoCandidate{
+				authID:     authID,
+				provider:   provider,
+				model:      pair.Model,
+				modelGroup: antigravityPairModelGroup(pair),
+				disabled:   disabled,
+				payload:    payload,
+			})
+		}
+		return out
+	}
+	model, ok := autoModel(s.config, provider, available)
 	if !ok {
-		return autoCandidate{}, false
+		return nil
 	}
-	payload, ok := autoCandidatePayload(file, document, runtimeAuth, provider, model, authID, s.store, s.now().UTC(), s.host)
+	payload, ok := autoCandidatePayload(file, document, runtimeAuth, provider, model, authID, s.store, observedAt, s.host)
 	if !ok {
-		return autoCandidate{}, false
+		return nil
 	}
-	return autoCandidate{authID: authID, provider: provider, model: model, disabled: disabled, payload: payload}, true
+	return []autoCandidate{{authID: authID, provider: provider, model: model, disabled: disabled, payload: payload}}
 }
 
 func autoCandidatePayload(file host.AuthFile, document autoAuthFileDocument, runtimeAuth autoRuntimeAuthFile, provider detector.Provider, model string, authID string, store *state.Store, observedAt time.Time, hostClient host.Client) ([]byte, bool) {
+	return autoCandidatePayloadWithGroup(file, document, runtimeAuth, provider, model, authID, store, observedAt, hostClient, autoPayloadModelGroup(provider, model))
+}
+
+func autoCandidatePayloadWithGroup(file host.AuthFile, document autoAuthFileDocument, runtimeAuth autoRuntimeAuthFile, provider detector.Provider, model string, authID string, store *state.Store, observedAt time.Time, hostClient host.Client, modelGroup string) ([]byte, bool) {
 	if runtimeAuth.ok {
 		runtimeDocument := decodeAutoAuthFile(runtimeAuth.file)
 		if payload, ok := autoQuotaPayload(runtimeAuth.file, runtimeDocument); ok && keepTrueAutoPayload(provider, payload, observedAt) {
@@ -67,10 +100,7 @@ func autoCandidatePayload(file host.AuthFile, document autoAuthFileDocument, run
 		return payload, true
 	}
 	if store != nil {
-		record, ok := store.LatestSuccess(authID, string(provider))
-		if provider == detector.ProviderCodex {
-			record, ok = store.UsableLatestSuccess(authID, string(provider))
-		}
+		record, ok := latestSuccessForAutoPayload(store, authID, provider, modelGroup)
 		if ok {
 			if payload, ok := syntheticInferredQuotaPayload(provider, model, record, observedAt); ok {
 				return payload, true
@@ -138,35 +168,28 @@ func autoModel(cfg config.Config, provider detector.Provider, availableModels []
 	}
 }
 
-func autoAntigravityModel(cfg config.Config, availableModels []string) (string, bool) {
-	model := strings.TrimSpace(cfg.ActivationModels.Antigravity.Models)
-	if model == "" {
-		return "", false
+func latestSuccessForAutoPayload(store *state.Store, authID string, provider detector.Provider, modelGroup string) (state.Record, bool) {
+	if store == nil {
+		return state.Record{}, false
 	}
-	if group := strings.TrimSpace(cfg.ActivationModels.Antigravity.ModelsGroup); group != "" {
-		inferred, ok := antigravityConfigModelGroup(model)
-		if !ok || string(inferred) != group {
-			// 模型名无法推断组时，以配置 models_group 为准；可推断时要求与 models_group 一致。
-			if ok {
-				return "", false
-			}
-		}
+	if provider == detector.ProviderCodex {
+		return store.UsableLatestSuccess(authID, string(provider))
 	}
-	if len(availableModels) > 0 && !hasAutoModel(availableModels, model) {
-		return "", false
+	if provider == detector.ProviderAntigravity {
+		return store.LatestSuccessForModelGroup(authID, string(provider), modelGroup)
 	}
-	return model, true
+	return store.LatestSuccess(authID, string(provider))
 }
 
-func antigravityConfigModelGroup(model string) (detector.ModelGroup, bool) {
-	lower := strings.ToLower(strings.TrimSpace(model))
-	if strings.Contains(lower, "gemini") {
-		return detector.ModelGroupGemini, true
+func autoPayloadModelGroup(provider detector.Provider, model string) string {
+	if provider != detector.ProviderAntigravity {
+		return ""
 	}
-	if strings.Contains(lower, "claude") || strings.Contains(lower, "gpt") {
-		return detector.ModelGroupClaudeGPT, true
+	inferred, ok := antigravityConfigModelGroup(model)
+	if !ok {
+		return ""
 	}
-	return detector.ModelGroupNone, false
+	return string(inferred)
 }
 
 func syntheticInferredQuotaPayload(provider detector.Provider, model string, record state.Record, observedAt time.Time) ([]byte, bool) {

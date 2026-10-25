@@ -20,12 +20,12 @@ Quota Activation is a CLIProxyAPI (CPA) plugin for quota-reset activation. The p
 
 ## Overview
 
-- Supports manual and automatic activation for **Codex** and **Antigravity** credentials.
+- Supports manual and automatic activation for **Codex** and **Antigravity** (including `gemini`, `claude_gpt`, and `gemini_4_argon` model groups) credentials.
 - Keeps automatic and manual configuration separate. Automatic mode only uses `auto_activate`, `scan_interval`, and `activation_models.*`.
 - Automatic quota windows prioritize real long-window quota data.
-- Codex ignores 5-hour rolling short windows. When a real long window is absent, it synthesizes one from the plan type (paid 7 days, free or unknown 30 days).
-- Antigravity keeps its 7-day default long window.
-- Management pages and diagnostics expose only redacted information.
+- Codex automatically parses credentials to infer plan types and ignores 5-hour rolling short windows. When a real long window is absent, it synthesizes one from the plan type (paid 7 days, free or unknown 30 days).
+- Antigravity keeps its 7-day default long window and supports multi-group position-based pairing.
+- Management pages support bilingual UI, execution history inspection, and debounce protection; diagnostics and state expose only redacted information.
 
 ## Workflow
 
@@ -102,6 +102,7 @@ plugins:
         codex:
           models: "gpt-5.4-mini"
         antigravity:
+          # Supports single group (e.g. "gemini" / "gemini-3-flash") or 1-3 groups separated by | and paired by position (e.g. "gemini|gemini_4_argon" and "gemini-3-flash|gemini-4-argon"; one model per group, arrays/commas not supported)
           models_group: "gemini"
           models: "gemini-3-flash"
 ```
@@ -118,8 +119,8 @@ plugins:
 | `activation_transport` | Transport: `direct_http` (**default**, via `host.http.do`) or `scheduler_boost` (legacy priority boost + `host.model.execute`). |
 | `scheduler_boost_fallback` | Only when `activation_transport=direct_http`. Default `true`. On **transport/host** failures, may fall back once to `scheduler_boost`. **Business failures / fake 2xx (no valid structure) never fall back** and must not write a success cycle. |
 | `activation_models.codex.models` | Codex model for automatic activation. |
-| `activation_models.antigravity.models_group` | Antigravity group: `gemini` or `claude_gpt`. |
-| `activation_models.antigravity.models` | Model for the selected Antigravity group. |
+	| `activation_models.antigravity.models_group` | Antigravity automatic activation group (`gemini`, `claude_gpt`, `gemini_4_argon`). Supports 1-3 groups separated by `\|` and paired with `models` by position; one model per group; legacy single value compatible; arrays/commas not supported. |
+| `activation_models.antigravity.models` | Model name for Antigravity automatic activation. For multiple groups, separate with `\|` and pair with `models_group` by position; one model per group; legacy single value compatible; arrays/commas not supported. |
 
 Notes:
 

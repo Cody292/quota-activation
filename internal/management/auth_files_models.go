@@ -91,19 +91,20 @@ func (h *Handler) modelChoices(provider string, availableModels []string) []mode
 }
 
 func antigravityModelGroup(model string) detector.ModelGroup {
-	lower := strings.ToLower(model)
-	if strings.Contains(lower, "gemini") {
-		return detector.ModelGroupGemini
+	group, ok := detector.InferModelGroup(model)
+	if !ok {
+		return detector.ModelGroupNone
 	}
-	if strings.Contains(lower, "claude") || strings.Contains(lower, "gpt") {
-		return detector.ModelGroupClaudeGPT
-	}
-	return detector.ModelGroupNone
+	return group
 }
 
 func antigravityModelGroupLabel(group detector.ModelGroup) string {
-	if group == detector.ModelGroupGemini {
+	switch group {
+	case detector.ModelGroupGemini:
 		return "Gemini"
+	case detector.ModelGroupGemini4Argon:
+		return "Gemini 4 Argon"
+	default:
+		return "Claude/GPT"
 	}
-	return "Claude/GPT"
 }

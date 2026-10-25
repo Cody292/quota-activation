@@ -48,6 +48,8 @@ const (
 	ModelGroupGemini ModelGroup = "gemini"
 	// ModelGroupClaudeGPT 表示 Antigravity Claude/GPT 模型组。
 	ModelGroupClaudeGPT ModelGroup = "claude_gpt"
+	// ModelGroupGemini4Argon 表示 Antigravity Gemini 4 Argon 模型组。
+	ModelGroupGemini4Argon ModelGroup = "gemini_4_argon"
 )
 
 // Status 标识 detector 对本次 quota 观察的可用性结论。

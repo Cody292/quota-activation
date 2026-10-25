@@ -185,7 +185,7 @@ func registrationResult() RegisterResult {
 		SchemaVersion: 1,
 		Metadata: Metadata{
 			Name:             "quota-activation",
-			Version:          "0.0.7",
+			Version:          "0.0.8",
 			Author:           "Cody292",
 			GitHubRepository: "https://github.com/Cody292/quota-activation",
 			Description:      "Quota reset activation management API and scheduler helper for Codex and Antigravity.",
@@ -199,8 +199,8 @@ func configFields() []ConfigField {
 	defaults := config.Default()
 	return []ConfigField{
 		{Name: "activation_models.codex.models", Type: "string", Description: localizedDescription("Codex 自动唤醒使用的模型名称。", "Model name used for Codex automatic activation."), DefaultValue: defaults.ActivationModels.Codex.Models},
-		{Name: "activation_models.antigravity.models_group", Type: "string", Description: localizedDescription("Antigravity 自动唤醒使用的模型组。", "Model group used for Antigravity automatic activation."), EnumValues: []string{"gemini", "claude_gpt"}, DefaultValue: defaults.ActivationModels.Antigravity.ModelsGroup},
-		{Name: "activation_models.antigravity.models", Type: "string", Description: localizedDescription("当前 Antigravity 模型组自动唤醒使用的模型名称。", "Model name used for the selected Antigravity model group."), DefaultValue: defaults.ActivationModels.Antigravity.Models},
+		{Name: "activation_models.antigravity.models_group", Type: "string", Description: localizedDescription("Antigravity 自动唤醒模型组（gemini、claude_gpt、gemini_4_argon）。支持 1~3 个模型组并用 | 分隔，与 models 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。", "Model group for Antigravity automatic activation (gemini, claude_gpt, gemini_4_argon). Supports 1-3 groups separated by | and paired with models by position; one model per group; legacy single value compatible; arrays/commas not supported."), DefaultValue: defaults.ActivationModels.Antigravity.ModelsGroup},
+		{Name: "activation_models.antigravity.models", Type: "string", Description: localizedDescription("Antigravity 自动唤醒使用的模型名称。多组时用 | 分隔并与 models_group 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。", "Model name used for Antigravity automatic activation. For multiple groups, separate with | and pair with models_group by position; one model per group; legacy single value compatible; arrays/commas not supported."), DefaultValue: defaults.ActivationModels.Antigravity.Models},
 		{Name: "auto_activate", Type: "boolean", Description: localizedDescription("启用调度器自动配额唤醒；默认 false，因此手动唤醒仍是默认方式。未启用时执行记录不会出现 auto scan 摘要。", "Enable scheduler-driven automatic quota activation; default is false, so manual activation remains the default. When disabled, no auto scan summary appears in run history."), DefaultValue: defaults.AutoActivate},
 		{Name: "enable_before_activation", Type: "boolean", Description: localizedDescription("默认 true：达到唤醒条件后自动启用已禁用凭证并保持启用；显式 false 时候选阶段丢弃 disabled。", "Default true: automatically enable disabled credentials that meet activation conditions and keep them enabled; explicit false drops them at candidate stage."), DefaultValue: defaults.EnableBeforeActivation},
 		{Name: "scan_interval", Type: "string", Description: localizedDescription("自动扫描间隔（单位：分钟）。填写纯数字即可，无需带单位；默认 30。", "Automatic scan interval in minutes. Enter a plain number without a unit; default is 30."), DefaultValue: formatDurationMinutes(defaults.ScanInterval)},

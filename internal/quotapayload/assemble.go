@@ -107,7 +107,7 @@ func MarshalAntigravity(models []string, windowName string, limitSeconds int, re
 			continue
 		}
 		providerName := "anthropic"
-		if group == detector.ModelGroupGemini {
+		if group == detector.ModelGroupGemini || group == detector.ModelGroupGemini4Argon {
 			providerName = "gemini"
 		}
 		encoded[model] = map[string]any{
@@ -160,14 +160,7 @@ func normalizeWindow(raw string) (name string, limitSeconds int, ok bool) {
 }
 
 func antigravityGroup(model string) (detector.ModelGroup, bool) {
-	lower := strings.ToLower(strings.TrimSpace(model))
-	if strings.Contains(lower, "gemini") {
-		return detector.ModelGroupGemini, true
-	}
-	if strings.Contains(lower, "claude") || strings.Contains(lower, "gpt") {
-		return detector.ModelGroupClaudeGPT, true
-	}
-	return detector.ModelGroupNone, false
+	return detector.InferModelGroup(model)
 }
 
 func encode(raw any) (json.RawMessage, bool) {

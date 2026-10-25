@@ -6,8 +6,9 @@ import (
 )
 
 type usableAuthKey struct {
-	AuthID   string
-	Provider string
+	AuthID     string
+	Provider   string
+	ModelGroup string
 }
 
 func (r *Runtime) rememberUsableSuccess(rec state.Record) {
@@ -26,7 +27,7 @@ func (r *Runtime) rememberUsableSuccessLocked(rec state.Record) {
 	if r.lastUsableSuccess == nil {
 		r.lastUsableSuccess = make(map[usableAuthKey]state.Record)
 	}
-	r.lastUsableSuccess[usableAuthKey{AuthID: rec.AuthID, Provider: rec.Provider}] = rec
+	r.lastUsableSuccess[usableCacheKey(rec)] = rec
 }
 
 func (r *Runtime) snapshotUsableCacheLocked() []state.Record {
@@ -58,8 +59,12 @@ func (r *Runtime) seedUsableCacheFromStoreLocked(store *state.Store) {
 func usableSuccessForCache(rec state.Record) bool {
 	probe := state.NewStore("")
 	probe.MergeUsableRecord(rec)
-	_, ok := probe.UsableLatestSuccess(rec.AuthID, rec.Provider)
+	_, ok := probe.UsableLatestSuccessForModelGroup(rec.AuthID, rec.Provider, state.ModelGroupOf(rec))
 	return ok
+}
+
+func usableCacheKey(rec state.Record) usableAuthKey {
+	return usableAuthKey{AuthID: rec.AuthID, Provider: rec.Provider, ModelGroup: state.ModelGroupOf(rec)}
 }
 
 func usableRecordFromResult(result activator.Result) state.Record {

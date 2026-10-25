@@ -5,8 +5,9 @@ import (
 )
 
 type usableAuthKey struct {
-	AuthID   string
-	Provider string
+	AuthID     string
+	Provider   string
+	ModelGroup string
 }
 
 func (a *Activator) rememberUsableSuccess(rec state.Record) {
@@ -18,7 +19,7 @@ func (a *Activator) rememberUsableSuccess(rec state.Record) {
 	if a.lastUsableSuccess == nil {
 		a.lastUsableSuccess = make(map[usableAuthKey]state.Record)
 	}
-	a.lastUsableSuccess[usableAuthKey{AuthID: rec.AuthID, Provider: rec.Provider}] = rec
+	a.lastUsableSuccess[usableCacheKey(rec)] = rec
 }
 
 func (a *Activator) hardSkipStore() *state.Store {
@@ -44,6 +45,10 @@ func (a *Activator) hardSkipStore() *state.Store {
 func usableSuccessForCache(rec state.Record) bool {
 	probe := state.NewStore("")
 	probe.MergeUsableRecord(rec)
-	_, ok := probe.UsableLatestSuccess(rec.AuthID, rec.Provider)
+	_, ok := probe.UsableLatestSuccessForModelGroup(rec.AuthID, rec.Provider, state.ModelGroupOf(rec))
 	return ok
+}
+
+func usableCacheKey(rec state.Record) usableAuthKey {
+	return usableAuthKey{AuthID: rec.AuthID, Provider: rec.Provider, ModelGroup: state.ModelGroupOf(rec)}
 }
