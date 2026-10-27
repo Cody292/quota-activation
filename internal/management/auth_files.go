@@ -31,20 +31,25 @@ type modelChoice struct {
 	Group string `json:"group,omitempty"`
 }
 
+type antigravityCapabilityHints struct {
+	ModelIDs []string `json:"model_ids"`
+}
+
 type authFileDocument struct {
-	AuthID               string   `json:"auth_id"`
-	AuthIDUpper          string   `json:"authID"`
-	ID                   string   `json:"id"`
-	Name                 string   `json:"name"`
-	Account              string   `json:"account"`
-	Email                string   `json:"email"`
-	Provider             string   `json:"provider"`
-	Type                 string   `json:"type"`
-	Disabled             bool     `json:"disabled"`
-	AvailableModels      []string `json:"available_models"`
-	AvailableModelsUpper []string `json:"availableModels"`
-	Models               []string `json:"models"`
-	RecentModels         []string `json:"recent_models"`
+	AuthID               string                     `json:"auth_id"`
+	AuthIDUpper          string                     `json:"authID"`
+	ID                   string                     `json:"id"`
+	Name                 string                     `json:"name"`
+	Account              string                     `json:"account"`
+	Email                string                     `json:"email"`
+	Provider             string                     `json:"provider"`
+	Type                 string                     `json:"type"`
+	Disabled             bool                       `json:"disabled"`
+	AvailableModels      []string                   `json:"available_models"`
+	AvailableModelsUpper []string                   `json:"availableModels"`
+	Models               []string                   `json:"models"`
+	RecentModels         []string                   `json:"recent_models"`
+	AntigravityHints     antigravityCapabilityHints `json:"antigravity_capability_hints"`
 }
 
 func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) {
@@ -120,6 +125,10 @@ func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]mod
 		return authFileChoice{}, false
 	}
 	availableModels := append(runtimeAvailableModels(runtimeFile), document.availableModels()...)
+	if detector.Provider(provider) == detector.ProviderAntigravity {
+		availableModels = append(availableModels, document.AntigravityHints.ModelIDs...)
+		availableModels = uniqueModels(availableModels)
+	}
 	models := h.modelChoices(provider, availableModels)
 	if modelCache != nil {
 		cacheKey := provider + "\x00" + strings.Join(availableModels, "\x00")

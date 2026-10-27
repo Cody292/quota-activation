@@ -125,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.8</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.9</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -316,7 +316,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        antigravityGroupClaudeGPT: "Claude/GPT 组",
 	        antigravityGroupArgon: "Gemini 4 Argon 组",
 	        helpAntigravityMultiGroupDesc: "同一凭证支持同时选择多个模型组，生成固定顺序（gemini|claude_gpt|gemini_4_argon）的 models_group 与 models 预览。| 为位置配对符号，每组仅对应一个模型；旧单值配置完全兼容；不支持逗号或数组格式。Argon 模型保留在独立的 gemini_4_argon 组。",
-	        activationSummary: "手动唤醒完成：成功 {success}，失败 {failed}",
+	        activationSummary: "手动唤醒完成：成功 {success}，失败 {failed}，跳过 {skipped}",
 	        recordsTab: "执行记录",
 	        recordsTitle: "执行记录",
 	        recordsHint: "进程内最近 5 次（重启清空）",
@@ -388,7 +388,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        antigravityGroupClaudeGPT: "Claude/GPT Group",
 	        antigravityGroupArgon: "Gemini 4 Argon Group",
 	        helpAntigravityMultiGroupDesc: "The same credential supports selecting multiple model groups simultaneously, generating '|'-separated models_group and models strings (fixed order: gemini|claude_gpt|gemini_4_argon). Unselected groups are omitted; single-group configs remain fully compatible; do not use arrays or commas.",
-	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed",
+	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed, {skipped} skipped",
 	        recordsTab: "Execution Records",
 	        recordsTitle: "Execution Records",
 	        recordsHint: "Last 5 runs in process (cleared on restart)",
@@ -415,7 +415,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        antigravityGroupClaudeGPT: "Claude/GPT Group",
 	        antigravityGroupArgon: "Gemini 4 Argon Group",
 	        helpAntigravityMultiGroupDesc: "Supports selecting multiple model groups simultaneously for the same credential, generating models_group and models previews in a fixed order (gemini|claude_gpt|gemini_4_argon). | is used for position-based pairing with exactly one model per group. Fully backward-compatible with legacy single-value configs. Comma and array formats are not supported. Argon models are retained in the dedicated gemini_4_argon group.",
-	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed"
+	        activationSummary: "Manual activation completed: {success} succeeded, {failed} failed, {skipped} skipped"
 	      }
 	    };
 	    let language = "zh-CN";
@@ -839,6 +839,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      try {
 	        let successCount = 0;
 	        let failedCount = 0;
+	        let skippedCount = 0;
 	        let lastError = null;
 	        for (const credential of credentials) {
 	          for (const target of targets) {
@@ -851,28 +852,36 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	              quota_payload: quotaPayloadForActivation(credential, target.option)
 	            };
 	            try {
-	              await managementFetch(ACTIVATE_PATH, {
+	              const response = await managementFetch(ACTIVATE_PATH, {
 	                method: "POST",
 	                body: JSON.stringify(payload)
 	              });
-	              successCount++;
+	              if (response && response.status === "success" && response.success === true) {
+	                successCount++;
+	              } else if (response && (response.status === "skipped" || response.status === "busy")) {
+	                skippedCount++;
+	                const errMsg = (response && response.last_error) ||
+	                  (response.status === "skipped" ? textFor("statusSkipped") : textFor("statusBusy"));
+	                lastError = new Error(errMsg);
+	              } else {
+	                failedCount++;
+	                const errMsg = (response && response.last_error) ||
+	                  (response && response.message ? response.message : textFor("activationFailed"));
+	                lastError = new Error(errMsg);
+	              }
 	            } catch (error) {
 	              failedCount++;
 	              lastError = error;
 	            }
 	          }
 	        }
-	        if (failedCount === 0) {
+	        if (failedCount === 0 && skippedCount === 0) {
 	          message(textFor("activationDone"));
-	        } else if (successCount === 0 && targets.length === 1 && credentials.length === 1) {
-	          if (lastError && (lastError.message === textFor("missingCredential") || lastError.message === textFor("missingModel"))) {
-	            message(lastError.message);
-	          } else {
-	            message(activationErrorMessage(lastError));
-	          }
+	        } else if (targets.length === 1 && credentials.length === 1 && lastError && (lastError.message === textFor("missingCredential") || lastError.message === textFor("missingModel"))) {
+	          message(lastError.message);
 	        } else {
-	          const summaryTpl = textFor("activationSummary") || (language === "zh-CN" ? "手动唤醒完成：成功 {success}，失败 {failed}" : "Manual activation completed: {success} succeeded, {failed} failed");
-	          let summaryText = summaryTpl.replace("{success}", String(successCount)).replace("{failed}", String(failedCount));
+	          const summaryTpl = textFor("activationSummary") || (language === "zh-CN" ? "手动唤醒完成：成功 {success}，失败 {failed}，跳过 {skipped}" : "Manual activation completed: {success} succeeded, {failed} failed, {skipped} skipped");
+	          let summaryText = summaryTpl.replace("{success}", String(successCount)).replace("{failed}", String(failedCount)).replace("{skipped}", String(skippedCount));
 	          if (lastError) {
 	            summaryText += " (" + activationErrorMessage(lastError) + ")";
 	          }
