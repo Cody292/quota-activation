@@ -43,8 +43,7 @@ func (h *Handler) handleActivate(w http.ResponseWriter, request *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	if !shouldActivate {
-		// 周期已处理：写 skipped 响应（200），禁止 400 导致前端当错误。
+	if !shouldActivate && !activation.Manual {
 		skipped := activator.Result{
 			AuthID:       activation.AuthID,
 			Provider:     string(activation.Provider),

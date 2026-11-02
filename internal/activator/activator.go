@@ -75,9 +75,10 @@ func (a *Activator) Activate(ctx context.Context, request Request) (Result, erro
 		return a.failAndStore(ctx, result, err)
 	}
 
-	// 硬闸：manual/auto 共用。周期内已有 success 且未证明 remaining 恢复 → skip，禁止 HTTPDo/boost。
-	if skip, reason := shouldHardSkipActiveCycle(a.hardSkipStore(), normalized, a.now().UTC()); skip {
-		return a.storeResult(ctx, applyHardSkip(result, reason))
+	if !normalized.Manual {
+		if skip, reason := shouldHardSkipActiveCycle(a.hardSkipStore(), normalized, a.now().UTC()); skip {
+			return a.storeResult(ctx, applyHardSkip(result, reason))
+		}
 	}
 
 	enabled, enableErr := a.enableIfNeeded(ctx, normalized)

@@ -42,6 +42,9 @@ func (a *Activator) storeResult(ctx context.Context, result Result) (Result, err
 	if a.store == nil {
 		return result, ErrMissingDependency
 	}
+	if result.noCycleManualAntigravity {
+		return result, nil
+	}
 	rec := state.Record{
 		AuthID:       result.AuthID,
 		Provider:     result.Provider,

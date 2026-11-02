@@ -32,6 +32,7 @@ coverage.html
 .DS_Store
 state.json
 *.state
+.browser-memory/
 
 # 本地配置与敏感材料
 .env

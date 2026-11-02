@@ -3,6 +3,7 @@ package activator
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"quota-activation/internal/host"
@@ -13,6 +14,12 @@ import (
 // 不得仅依赖 HTTP 2xx：须存在 response id / completed / output 结构且无 error。
 func EvaluateCodexActivationSuccess(statusCode int, body []byte) (ok bool, message string) {
 	if !host.IsHTTPSuccess(statusCode) {
+		if statusCode == http.StatusTooManyRequests {
+			if codexIsUsageLimit(body) {
+				return false, "Codex唤醒失败：用量额度已耗尽"
+			}
+			return false, "Codex唤醒失败：请求过于频繁（HTTP 429）"
+		}
 		return false, fmt.Sprintf("Codex唤醒失败：上游返回非成功状态（HTTP %d）", statusCode)
 	}
 	trimmed := strings.TrimSpace(string(body))
@@ -49,6 +56,61 @@ func EvaluateCodexActivationSuccess(statusCode int, body []byte) (ok bool, messa
 		}
 	}
 	return false, "Codex唤醒失败：响应缺少有效输出结构"
+}
+
+func codexIsUsageLimit(body []byte) bool {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return false
+	}
+	if strings.Contains(trimmed, "event:") || strings.Contains(trimmed, "data:") {
+		return codexSSEIsUsageLimit(trimmed)
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(body, &root); err != nil {
+		return strings.Contains(strings.ToLower(trimmed), usageLimitReachedType)
+	}
+	if _, isUsageLimit, hasError := codexErrorFromRoot(root); hasError && isUsageLimit {
+		return true
+	}
+	if wrapped, ok := root["response"]; ok {
+		var nested map[string]json.RawMessage
+		if json.Unmarshal(wrapped, &nested) == nil {
+			if _, isUsageLimit, hasError := codexErrorFromRoot(nested); hasError && isUsageLimit {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func codexSSEIsUsageLimit(sse string) bool {
+	for _, line := range strings.Split(sse, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var event map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			continue
+		}
+		if raw, ok := event["response"]; ok {
+			var nested map[string]json.RawMessage
+			if json.Unmarshal(raw, &nested) == nil {
+				if _, isUsageLimit, hasError := codexErrorFromRoot(nested); hasError && isUsageLimit {
+					return true
+				}
+			}
+		}
+		if _, isUsageLimit, hasError := codexErrorFromRoot(event); hasError && isUsageLimit {
+			return true
+		}
+	}
+	return false
 }
 
 func evaluateCodexSSESuccess(sse string) (bool, string) {
@@ -138,31 +200,60 @@ func codexHasStructuralSuccess(root map[string]json.RawMessage) bool {
 	return false
 }
 
+func isCodexUsageLimit(typeText, codeText, msgText string) bool {
+	typeText = strings.ToLower(strings.TrimSpace(typeText))
+	codeText = strings.ToLower(strings.TrimSpace(codeText))
+	msgText = strings.ToLower(strings.TrimSpace(msgText))
+	return typeText == usageLimitReachedType || codeText == usageLimitReachedType ||
+		strings.Contains(typeText, "usage_limit") || strings.Contains(codeText, "usage_limit") ||
+		strings.Contains(msgText, "usage limit") || strings.Contains(msgText, "usage_limit")
+}
+
 func codexErrorFromRoot(root map[string]json.RawMessage) (message string, usageLimit bool, hasError bool) {
 	errRaw, ok := root["error"]
-	if !ok || string(errRaw) == "null" {
-		return "", false, false
+	if ok && string(errRaw) != "null" {
+		var payload struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		}
+		// error 可能是对象或字符串。
+		if err := json.Unmarshal(errRaw, &payload); err != nil {
+			var asString string
+			if json.Unmarshal(errRaw, &asString) == nil && strings.TrimSpace(asString) != "" {
+				if strings.Contains(strings.ToLower(asString), usageLimitReachedType) || strings.Contains(strings.ToLower(asString), "usage limit") {
+					return "Codex唤醒失败：用量额度已耗尽", true, true
+				}
+				return "Codex唤醒失败：上游返回错误", false, true
+			}
+			return "Codex唤醒失败：上游返回错误", false, true
+		}
+		if isCodexUsageLimit(payload.Type, payload.Code, payload.Message) {
+			return "Codex唤醒失败：用量额度已耗尽", true, true
+		}
+		return "Codex唤醒失败：上游返回业务错误", false, true
 	}
-	var payload struct {
+
+	var direct struct {
 		Type    string `json:"type"`
 		Message string `json:"message"`
 		Code    string `json:"code"`
 	}
-	// error 可能是对象或字符串。
-	if err := json.Unmarshal(errRaw, &payload); err != nil {
-		var asString string
-		if json.Unmarshal(errRaw, &asString) == nil && strings.TrimSpace(asString) != "" {
-			return "Codex唤醒失败：上游返回错误", false, true
-		}
-		return "Codex唤醒失败：上游返回错误", false, true
+	if rawType, ok := root["type"]; ok {
+		_ = json.Unmarshal(rawType, &direct.Type)
 	}
-	typeText := strings.ToLower(strings.TrimSpace(payload.Type))
-	codeText := strings.ToLower(strings.TrimSpace(payload.Code))
-	msgText := strings.ToLower(strings.TrimSpace(payload.Message))
-	if typeText == usageLimitReachedType || codeText == usageLimitReachedType ||
-		strings.Contains(typeText, "usage_limit") || strings.Contains(codeText, "usage_limit") ||
-		strings.Contains(msgText, "usage limit") || strings.Contains(msgText, "usage_limit") {
+	if rawCode, ok := root["code"]; ok {
+		_ = json.Unmarshal(rawCode, &direct.Code)
+	}
+	if rawMsg, ok := root["message"]; ok {
+		_ = json.Unmarshal(rawMsg, &direct.Message)
+	}
+	if isCodexUsageLimit(direct.Type, direct.Code, direct.Message) {
 		return "Codex唤醒失败：用量额度已耗尽", true, true
 	}
-	return "Codex唤醒失败：上游返回业务错误", false, true
+	if strings.EqualFold(direct.Type, "error") || strings.EqualFold(direct.Type, "response.failed") {
+		return "Codex唤醒失败：上游返回业务错误", false, true
+	}
+
+	return "", false, false
 }

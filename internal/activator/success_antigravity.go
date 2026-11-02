@@ -3,6 +3,7 @@ package activator
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"quota-activation/internal/host"
@@ -12,6 +13,17 @@ import (
 // 条件：HTTP 2xx + 顶层或 response.candidates 任一非空 + 无 error 对象。
 func EvaluateAntigravityActivationSuccess(statusCode int, body []byte) (ok bool, message string) {
 	if !host.IsHTTPSuccess(statusCode) {
+		if statusCode == http.StatusNotFound && len(strings.TrimSpace(string(body))) > 0 {
+			var root map[string]json.RawMessage
+			if err := json.Unmarshal(body, &root); err == nil {
+				if errRaw, ok := root["error"]; ok && string(errRaw) != "null" {
+					errStr := strings.ToLower(string(errRaw))
+					if strings.Contains(errStr, "model not found") || strings.Contains(errStr, "model_not_found") {
+						return false, "Antigravity唤醒失败：模型未开放/资源不存在（HTTP 404）"
+					}
+				}
+			}
+		}
 		return false, fmt.Sprintf("Antigravity唤醒失败：上游返回非成功状态（HTTP %d）", statusCode)
 	}
 	if len(strings.TrimSpace(string(body))) == 0 {

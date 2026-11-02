@@ -57,25 +57,38 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 	response, err := a.host.ModelExecute(callCtx, executeRequest)
 	result.Nonce = created.Nonce
 	if err != nil {
-		result.HTTPStatus = statusCodeFromError(err)
-		if request.Provider == detector.ProviderCodex {
-			message, ok := usageLimitBusinessMessage(err)
-			if !ok {
-				return result, fmt.Errorf("host model execute: %w", safeHostError(err))
+		if isNetworkFailure(err) {
+			result.HTTPStatus = statusCodeFromError(err)
+			return result, fmt.Errorf("host model execute: %w", safeHostError(err))
+		}
+		statusCode := response.StatusCode
+		if statusCode == 0 {
+			statusCode = statusCodeFromError(err)
+		}
+		result.HTTPStatus = statusCode
+		if statusCode != 0 && !host.IsHTTPSuccess(statusCode) {
+			body := response.Body
+			if len(body) == 0 {
+				body = extractBodyFromError(err)
 			}
-			result.Status = StatusFailed
-			result.Success = false
-			result.LastError = message
-			return result, nil
+			if ok, message := evaluateActivationFailure(request.Provider, statusCode, body, err); !ok {
+				result.Status = StatusFailed
+				result.Success = false
+				result.LastError = message
+				return result, nil
+			}
 		}
 		return result, fmt.Errorf("host model execute: %w", safeHostError(err))
 	}
-	checked, err := host.ResponseOrStatusError(response)
-	if err != nil {
+	if !host.IsHTTPSuccess(response.StatusCode) {
 		result.HTTPStatus = response.StatusCode
-		return result, fmt.Errorf("host model execute: %w", safeHostError(err))
+		result.Status = StatusFailed
+		result.Success = false
+		_, message := evaluateActivationFailure(request.Provider, response.StatusCode, response.Body, nil)
+		result.LastError = message
+		return result, nil
 	}
-	result.HTTPStatus = checked.StatusCode
+	result.HTTPStatus = response.StatusCode
 	if !a.activationSessionConsumed(created.Nonce) {
 		result.Status = StatusFailed
 		result.Success = false
@@ -84,7 +97,7 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 		return result, nil
 	}
 	if request.Provider == detector.ProviderAntigravity {
-		if ok, message := EvaluateAntigravityActivationSuccess(checked.StatusCode, checked.Body); !ok {
+		if ok, message := EvaluateAntigravityActivationSuccess(response.StatusCode, response.Body); !ok {
 			result.Status = StatusFailed
 			result.Success = false
 			result.LastError = message
@@ -92,6 +105,35 @@ func (a *Activator) execute(ctx context.Context, request Request, result Result)
 		}
 	}
 	return result, nil
+}
+
+func extractBodyFromError(err error) []byte {
+	if err == nil {
+		return nil
+	}
+	text := err.Error()
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start >= 0 && end > start {
+		return []byte(text[start : end+1])
+	}
+	return nil
+}
+
+func evaluateActivationFailure(provider detector.Provider, statusCode int, body []byte, err error) (bool, string) {
+	if provider == detector.ProviderCodex && err != nil {
+		if msg, ok := usageLimitBusinessMessage(err); ok {
+			return false, msg
+		}
+	}
+	switch provider {
+	case detector.ProviderCodex:
+		return EvaluateCodexActivationSuccess(statusCode, body)
+	case detector.ProviderAntigravity:
+		return EvaluateAntigravityActivationSuccess(statusCode, body)
+	default:
+		return false, fmt.Sprintf("唤醒失败：上游返回非成功状态（HTTP %d）", statusCode)
+	}
 }
 
 type authFileModelsDocument struct {

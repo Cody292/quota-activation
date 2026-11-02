@@ -61,6 +61,7 @@ type Request struct {
 	Model        string
 	Prompt       string
 	Disabled     bool
+	Manual       bool
 	ObservedAt   time.Time
 	ResetAt      time.Time
 	Remaining    int64 // 可选：激活时观察到的 remaining，供 state 幂等/恢复
@@ -92,8 +93,9 @@ type Result struct {
 	ResetAt          time.Time `json:"reset_at"`
 	LastError        string    `json:"last_error,omitempty"`
 	// Warning 表示主流程已成功时的非致命提示（如状态落盘被中断），不应把整条标为失败。
-	Warning      string   `json:"warning,omitempty"`
-	WakePath     WakePath `json:"wake_path,omitempty"`
-	Remaining    int64    `json:"remaining,omitempty"`
-	HasRemaining bool     `json:"has_remaining,omitempty"`
+	Warning                  string   `json:"warning,omitempty"`
+	WakePath                 WakePath `json:"wake_path,omitempty"`
+	Remaining                int64    `json:"remaining,omitempty"`
+	HasRemaining             bool     `json:"has_remaining,omitempty"`
+	noCycleManualAntigravity bool
 }

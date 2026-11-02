@@ -27,16 +27,26 @@ func missingRequestFields(request Request) []string {
 	if request.AuthID == "" {
 		missing = append(missing, "auth_id")
 	}
-	if strings.TrimSpace(request.CycleKey.String()) == "" {
-		missing = append(missing, "cycle_key")
-	}
 	if request.Provider == "" || request.Provider == detector.ProviderUnknown {
 		missing = append(missing, "provider")
 	}
-	if request.Window == "" || request.Window == detector.WindowUnknown {
-		missing = append(missing, "window")
+	if !noCycleManualAntigravity(request) {
+		if strings.TrimSpace(request.CycleKey.String()) == "" {
+			missing = append(missing, "cycle_key")
+		}
+		if request.Window == "" || request.Window == detector.WindowUnknown {
+			missing = append(missing, "window")
+		}
 	}
 	return missing
+}
+
+func noCycleManualAntigravity(request Request) bool {
+	modelGroup, validModel := detector.InferModelGroup(request.Model)
+	return request.Manual && request.Provider == detector.ProviderAntigravity &&
+		validModel && request.ModelGroup != detector.ModelGroupNone && modelGroup == request.ModelGroup &&
+		strings.TrimSpace(request.CycleKey.String()) == "" && request.ResetAt.IsZero() &&
+		(request.Window == "" || request.Window == detector.WindowUnknown)
 }
 
 func (a *Activator) initialResult(request Request) Result {
@@ -54,5 +64,6 @@ func (a *Activator) initialResult(request Request) Result {
 		ResetAt:      request.ResetAt.UTC(),
 		Remaining:    request.Remaining,
 		HasRemaining: request.HasRemaining,
+		noCycleManualAntigravity: noCycleManualAntigravity(request),
 	}
 }

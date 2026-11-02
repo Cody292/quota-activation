@@ -11,11 +11,10 @@ func ModelGroupOf(rec Record) string {
 		return ""
 	}
 	needle := ":" + provider + "/"
-	idx := strings.Index(key, needle)
-	if idx < 0 {
+	_, rest, found := strings.Cut(key, needle)
+	if !found {
 		return ""
 	}
-	rest := key[idx+len(needle):]
 	group, _, found := strings.Cut(rest, ":")
 	if !found {
 		return strings.TrimSpace(rest)
@@ -32,7 +31,7 @@ type latestSuccessQuery struct {
 }
 
 // LatestSuccessForModelGroup 返回同 auth+provider+modelGroup 下最近 success。
-// modelGroup 为空只匹配无组记录（Codex / 旧 AG）；非空优先匹配该组，否则回退无组旧记录。
+// modelGroup 为空只匹配无组记录（Codex / 旧 AG）；非空只匹配该命名组。
 func (s *Store) LatestSuccessForModelGroup(authID string, provider string, modelGroup string) (Record, bool) {
 	return s.pickLatestSuccessQuery(latestSuccessQuery{
 		authID: authID, provider: provider, modelGroup: modelGroup, isolateGroup: true,
@@ -79,8 +78,8 @@ func (s *Store) pickLatestSuccessQuery(q latestSuccessQuery) (Record, bool) {
 	skipFiveHour := q.skipCodexFiveHour && strings.EqualFold(provider, "codex")
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var bestExact, bestLegacy Record
-	foundExact, foundLegacy := false, false
+	var bestExact Record
+	foundExact := false
 	for _, record := range s.records {
 		if record.AuthID != authID || record.Provider != provider {
 			continue
@@ -109,17 +108,11 @@ func (s *Store) pickLatestSuccessQuery(q latestSuccessQuery) (Record, bool) {
 			}
 			continue
 		}
-		if modelGroup != "" && recGroup == "" {
-			if !foundLegacy || successNewer(record, bestLegacy) {
-				bestLegacy = record
-				foundLegacy = true
-			}
-		}
 	}
 	if foundExact {
 		return bestExact, true
 	}
-	return bestLegacy, foundLegacy
+	return Record{}, false
 }
 
 func successNewer(record Record, best Record) bool {

@@ -52,8 +52,6 @@ func decodeActivationRequest(request *http.Request) (activationRequest, error) {
 	return decoded, nil
 }
 
-// toActivatorRequest 解析手动激活请求。store 非空时注入 previous 做周期去重；
-// !Activate 时返回 ok=false（handler 写 skipped，禁止 400 invalid_request）。
 // Codex 因 5h/unknown 无法 Evaluate 时，按套餐合成 monthly/weekly 再评一次。
 func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bool, error) {
 	provider, err := parseProvider(r.Provider)
@@ -87,6 +85,20 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 			decision, err = detector.EvaluateWithPrevious(input, previous)
 		}
 	}
+	if err != nil && provider == detector.ProviderAntigravity && errors.Is(err, detector.ErrUnknownQuota) {
+		modelGroupFromModel, ok := detector.InferModelGroup(model)
+		if ok && modelGroup != detector.ModelGroupNone && modelGroupFromModel == modelGroup && strings.TrimSpace(r.Model) != "" {
+			decision = detector.Decision{
+				Activate: true,
+				Observation: detector.ProbeObservation{
+					Provider:   provider,
+					ModelGroup: modelGroup,
+					Window:     detector.WindowUnknown,
+				},
+			}
+			err = nil
+		}
+	}
 	if err != nil {
 		return activator.Request{}, false, fmt.Errorf("evaluate quota: %w", err)
 	}
@@ -99,6 +111,7 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 		Model:        model,
 		Prompt:       r.Prompt,
 		Disabled:     r.Disabled,
+		Manual:       true,
 		ObservedAt:   observedAt,
 		ResetAt:      decision.Observation.ResetAt,
 		Remaining:    decision.Observation.Remaining,

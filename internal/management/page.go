@@ -125,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.0.9</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.0</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -487,7 +487,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        if (!credential) { continue; }
 	        if (Array.isArray(credential.models) && credential.models.length > 0) { continue; }
 	        const provider = String(credential.provider || "").toLowerCase();
-	        const cacheKey = provider || ("name:" + String(credential.name || credential.auth_id || ""));
+	        const cacheKey = String(credential.auth_id || credential.id || credential.name || provider);
 	        if (!credential.name && !providerCache[cacheKey]) { credential.models = Array.isArray(credential.models) ? credential.models : []; continue; }
 	        try {
 	          if (!Object.prototype.hasOwnProperty.call(providerCache, cacheKey)) {

@@ -125,10 +125,7 @@ func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]mod
 		return authFileChoice{}, false
 	}
 	availableModels := append(runtimeAvailableModels(runtimeFile), document.availableModels()...)
-	if detector.Provider(provider) == detector.ProviderAntigravity {
-		availableModels = append(availableModels, document.AntigravityHints.ModelIDs...)
-		availableModels = uniqueModels(availableModels)
-	}
+	availableModels = uniqueModels(availableModels)
 	models := h.modelChoices(provider, availableModels)
 	if modelCache != nil {
 		cacheKey := provider + "\x00" + strings.Join(availableModels, "\x00")
