@@ -185,7 +185,7 @@ func registrationResult() RegisterResult {
 		SchemaVersion: 1,
 		Metadata: Metadata{
 			Name:             "quota-activation",
-			Version:          "0.1.0",
+			Version:          "0.1.1",
 			Author:           "Cody292",
 			GitHubRepository: "https://github.com/Cody292/quota-activation",
 			Description:      "Quota reset activation management API and scheduler helper for Codex and Antigravity.",

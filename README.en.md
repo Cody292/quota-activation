@@ -26,6 +26,7 @@ Quota Activation is a CLIProxyAPI (CPA) plugin for quota-reset activation. The p
 - Codex automatically parses credentials to infer plan types and ignores 5-hour rolling short windows. When a real long window is absent, it synthesizes one from the plan type (paid 7 days, free or unknown 30 days).
 - Antigravity keeps its 7-day default long window, supports multi-group position-based pairing, and dynamically populates available models from capability hints.
 - Management pages support bilingual UI, execution history inspection, three-state manual activation feedback (success/failed/skipped), and debounce protection; diagnostics and state expose only redacted information.
+- Enhanced batch activation and UI ergonomics: models safely parse both object and raw string array formats; credentials are strictly filtered by the active provider; batch activation checks supported models for Antigravity credentials and automatically skips unsupported targets with accurate skip metrics.
 
 ## Workflow
 
@@ -34,6 +35,10 @@ Load plugin
   -> Read plugins.configs.quota-activation
   -> Register management routes and static resource page /status
   -> Manual: user selects credential/model and POSTs /activate
+       - strictly filter credentials by active provider
+       - allow manual trigger to bypass current-cycle hard-skip limit
+       - safely allow credentials without cycle records without polluting persistence
+       - batch activation checks model support and automatically skips unsupported entries
   -> Automatic: when auto_activate=true, scan by scan_interval
        - list/get_runtime credentials
        - prefer real long-window quota data

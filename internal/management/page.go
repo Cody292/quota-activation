@@ -125,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.0</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.1</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -507,8 +507,9 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    }
 	    function modelChoicesForCredential(credential, models) {
 	      const choices = [];
-	      for (const item of models) {
-	        const value = String((item && (item.id || item.name || item.value)) || "").trim();
+	      const list = Array.isArray(models) ? models : [];
+	      for (const item of list) {
+	        const value = String((typeof item === "string" ? item : (item && (item.id || item.name || item.value))) || "").trim();
 	        if (!value) { continue; }
 	        if (credential.provider === "antigravity") {
 	          const group = (item && (item.group || item.Group)) || antigravityModelGroup(value);
@@ -784,7 +785,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      const list = document.getElementById("credentialSelect");
 	      if (!list) return [];
 	      const selectedValues = Array.from(list.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
-	      return authFiles.filter((item) => selectedValues.includes(item.auth_id));
+	      return authFiles.filter((item) => normalizeProviderKey(credentialProvider(item)) === activeProvider && selectedValues.includes(item.auth_id));
 	    }
 	    function selectedCredential() {
 	      const list = selectedCredentials();
@@ -841,8 +842,24 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        let failedCount = 0;
 	        let skippedCount = 0;
 	        let lastError = null;
+	        const credChoicesMap = new Map();
+	        if (isAntigravity) {
+	          for (const cred of credentials) {
+	            if (cred) {
+	              credChoicesMap.set(cred, modelChoicesForCredential(cred, cred.models));
+	            }
+	          }
+	        }
 	        for (const credential of credentials) {
 	          for (const target of targets) {
+	            if (isAntigravity) {
+	              const credModels = credChoicesMap.get(credential) || modelChoicesForCredential(credential, credential.models);
+	              const supports = credModels.some((m) => m.value === target.model && (!target.model_group || m.group === target.model_group));
+	              if (!supports) {
+	                skippedCount++;
+	                continue;
+	              }
+	            }
 	            const payload = {
 	              auth_id: credential.auth_id,
 	              provider: credential.provider,

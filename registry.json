@@ -6,7 +6,7 @@
       "name": "Quota Activation",
       "description": "Manual and automatic quota reset activation for Codex and Antigravity credentials.",
       "author": "Cody292",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "https://github.com/Cody292/quota-activation",
       "homepage": "https://github.com/Cody292/quota-activation",
       "license": "MIT",
