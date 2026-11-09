@@ -148,6 +148,9 @@ type authFileModelsDocument struct {
 }
 
 func (a *Activator) availableModel(ctx context.Context, request Request) (string, error) {
+	if request.Provider == detector.ProviderAntigravity {
+		return a.authorizeAntigravityModel(ctx, request, false)
+	}
 	if requestedModel := strings.TrimSpace(request.Model); requestedModel != "" {
 		return requestedModel, nil
 	}

@@ -18,6 +18,7 @@ const schedulerMissCooldownReason = "调度未选中目标凭证（已冷却）"
 const schedulerMissErrorMessage = "调度器未选中目标凭证"
 const hostExecutorUnavailableCooldownReason = "宿主模型执行器不可用（已冷却）"
 const hostExecutorUnavailableMessage = "宿主模型执行器不可用（宿主未就绪或回调失败，非凭证失效）"
+const filterAntigravityCandidatesErrorMessage = "过滤候选凭证失败"
 
 // autoScanIntervalSlack 允许微早触发仍认领本轮，避免 timer 抖动静默丢 tick。
 const autoScanIntervalSlack = 2 * time.Second
@@ -117,21 +118,51 @@ func (r *Runtime) scanAutoCandidates(ctx context.Context) {
 	}
 
 	// 先串行收集候选（含 runtime auth 读取），再 worker 池并发 activate。
+	acc := newScanSummaryAccumulator()
 	candidates := make([]autoCandidate, 0, len(files))
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			r.snapshotScanSummary(newScanSummaryAccumulator().toInput())
+			r.snapshotScanSummary(acc.toInput())
 			return
 		}
 		runtimeAuth := snapshot.runtimeAuthFile(ctx, file)
 		if err := ctx.Err(); err != nil {
-			r.snapshotScanSummary(newScanSummaryAccumulator().toInput())
+			r.snapshotScanSummary(acc.toInput())
 			return
 		}
-		candidates = append(candidates, snapshot.autoCandidates(file, runtimeAuth)...)
+		fileCandidates := snapshot.autoCandidates(file, runtimeAuth)
+		if len(fileCandidates) > 0 && fileCandidates[0].provider == detector.ProviderAntigravity {
+			var enabledCandidates []autoCandidate
+			var disabledCandidates []autoCandidate
+			for _, c := range fileCandidates {
+				if c.disabled {
+					disabledCandidates = append(disabledCandidates, c)
+				} else {
+					enabledCandidates = append(enabledCandidates, c)
+				}
+			}
+			if len(enabledCandidates) > 0 {
+				filtered, err := filterAntigravityCandidates(ctx, snapshot.host, file, enabledCandidates)
+				if err := ctx.Err(); err != nil {
+					r.snapshotScanSummary(acc.toInput())
+					return
+				}
+				if err != nil {
+					acc.add(string(detector.ProviderAntigravity), autoScanDetail{
+						outcome:    autoScanOutcomeFailed,
+						reason:     filterAntigravityCandidatesErrorMessage,
+						errMessage: filterAntigravityCandidatesErrorMessage,
+					})
+					enabledCandidates = nil
+				} else {
+					enabledCandidates = filtered
+				}
+			}
+			fileCandidates = append(disabledCandidates, enabledCandidates...)
+		}
+		candidates = append(candidates, fileCandidates...)
 	}
 
-	acc := newScanSummaryAccumulator()
 	workers := maxConcurrencyWorkers(snapshot.config.MaxConcurrency)
 	// 缓冲 = 候选数，避免 ctx 取消后 worker 退出导致派发送死锁。
 	jobs := make(chan autoCandidate, len(candidates))

@@ -118,7 +118,7 @@ func (h *Handler) resolveAuthFiles(ctx context.Context, files []host.AuthFile) [
 func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]modelChoice) (authFileChoice, bool) {
 	runtimeFile := file
 	document := decodeAuthFile(file)
-	authID := firstNonBlank(runtimeFile.ID, file.ID, runtimeFile.Name, file.Name, document.Name, runtimeFile.AuthIndex, file.AuthIndex, document.AuthID, document.AuthIDUpper, document.ID)
+	authID := firstNonBlank(file.ID, runtimeFile.ID, file.Name, runtimeFile.Name, document.Name, document.ID, document.AuthID, document.AuthIDUpper, file.AuthIndex, runtimeFile.AuthIndex)
 	label := firstNonBlank(runtimeFile.Account, runtimeFile.Email, file.Account, file.Email, document.Account, document.Email, document.Name, file.Name, authID)
 	provider := normalizeProvider(firstNonBlank(runtimeFile.Provider, runtimeFile.Type, file.Provider, file.Type, document.Provider, document.Type))
 	if authID == "" || provider == "" {
@@ -139,6 +139,9 @@ func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]mod
 }
 
 func mergeRuntimeAuthFile(base host.AuthFile, runtime host.AuthFile) host.AuthFile {
+	if runtime.ID == "" {
+		runtime.ID = base.ID
+	}
 	if runtime.AuthIndex == "" {
 		runtime.AuthIndex = base.AuthIndex
 	}

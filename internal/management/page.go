@@ -125,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.1</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.2</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -963,6 +963,10 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      const msg = String(raw || "").trim();
 	      if (!msg) { return ""; }
 	      if (language !== "zh-CN") {
+	        const reasons = msg.match(/.*? ×\d+(?:，|$)/g);
+	        if (reasons && reasons.join("") === msg) {
+	          return reasons.map(reason => reason.replace(/，$/, "").replace(/^(.*?) ×(\d+)$/, (_, text, count) => localizeRecordMessage(text) + " ×" + count)).join(", ");
+	        }
 	        if (/状态保存被中断|状态保存失败/.test(msg)) {
 	          return "Activation succeeded, but saving state was interrupted (internal timeout/cancel); credential is still valid";
 	        }

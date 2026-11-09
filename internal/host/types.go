@@ -196,3 +196,64 @@ func ResponseOrStatusError(response ModelExecuteResponse) (ModelExecuteResponse,
 func IsHTTPSuccess(statusCode int) bool {
 	return statusCode >= 200 && statusCode <= 299
 }
+
+// ErrAuthModelsUnsupported 表示宿主客户端不支持 host.auth.models 查询。
+var ErrAuthModelsUnsupported = errors.New("auth models unsupported")
+
+// HostAuthModelsRequest 请求宿主指定或全部凭证的已注册模型。
+type HostAuthModelsRequest struct {
+	// AuthIndex 标识凭证索引；空值表示请求全部凭证。
+	AuthIndex string `json:"auth_index,omitempty"`
+}
+
+// AuthModelsRequest 是 HostAuthModelsRequest 的别名，提供测试与历史兼容。
+type AuthModelsRequest = HostAuthModelsRequest
+
+// HostAuthModelsResponse 返回匹配凭证及其注册的模型列表。
+type HostAuthModelsResponse struct {
+	// Credentials 包含凭证及其已注册模型列表。
+	Credentials []HostAuthModels `json:"credentials"`
+}
+
+// AuthModelsResponse 是 HostAuthModelsResponse 的别名，提供测试与历史兼容。
+type AuthModelsResponse = HostAuthModelsResponse
+
+// HostAuthModels 描述单个凭证注册的模型元数据。
+type HostAuthModels struct {
+	ID        string   `json:"id"`
+	AuthIndex string   `json:"auth_index"`
+	Provider  string   `json:"provider"`
+	Models    []string `json:"models"`
+}
+
+// AuthCredentialModels 是 HostAuthModels 的别名，提供测试与历史兼容。
+type AuthCredentialModels = HostAuthModels
+
+// AuthModelsClient 是可选的宿主凭证模型查询接口（host.auth.models）。
+type AuthModelsClient interface {
+	GetAuthModels(ctx context.Context, authIndex string) ([]HostAuthModels, error)
+}
+
+// AuthModelsProvider 是以 AuthModels 命名的可选宿主凭证模型查询接口。
+type AuthModelsProvider interface {
+	AuthModels(ctx context.Context, authIndex string) ([]HostAuthModels, error)
+}
+
+// GetAuthModels 查询指定凭证（或全部凭证）注册的模型列表。若宿主不支持则返回 ErrAuthModelsUnsupported。
+func GetAuthModels(ctx context.Context, client any, authIndex string) ([]HostAuthModels, error) {
+	if client == nil {
+		return nil, ErrAuthModelsUnsupported
+	}
+	if querier, ok := client.(AuthModelsClient); ok {
+		return querier.GetAuthModels(ctx, authIndex)
+	}
+	if querier, ok := client.(AuthModelsProvider); ok {
+		return querier.AuthModels(ctx, authIndex)
+	}
+	return nil, ErrAuthModelsUnsupported
+}
+
+// AuthModels 查询指定凭证注册的模型列表。若宿主不支持则返回 ErrAuthModelsUnsupported。
+func AuthModels(ctx context.Context, client any, authIndex string) ([]HostAuthModels, error) {
+	return GetAuthModels(ctx, client, authIndex)
+}

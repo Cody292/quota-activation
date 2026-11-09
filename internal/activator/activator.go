@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"quota-activation/internal/config"
+	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
 	"quota-activation/internal/session"
 	"quota-activation/internal/state"
@@ -24,6 +25,8 @@ type Activator struct {
 	providerBoostMu sync.Mutex
 	// providerLocks 按 provider 串行化 list→boost save→runtime 确认，不跨 ModelExecute。
 	providerLocks map[string]*sync.Mutex
+	enableLocksMu sync.Mutex
+	enableLocks   map[string]chan struct{}
 	// sleep 可注入：sleep(ctx, d) 在 d 内阻塞，ctx 取消返回 false。
 	sleep             func(context.Context, time.Duration) bool
 	usableMu          sync.Mutex
@@ -45,6 +48,7 @@ func New(options Options) *Activator {
 		sleep:         options.Sleep,
 		runSem:        make(chan struct{}, maxConcurrencySlots(options.Config.MaxConcurrency)),
 		providerLocks: make(map[string]*sync.Mutex),
+		enableLocks:   make(map[string]chan struct{}),
 	}
 }
 
@@ -87,6 +91,14 @@ func (a *Activator) Activate(ctx context.Context, request Request) (Result, erro
 	}
 	if enabled {
 		result.TemporaryEnabled = true
+	}
+
+	if normalized.Provider == detector.ProviderAntigravity {
+		model, authErr := a.authorizeAntigravityModel(ctx, normalized, enabled)
+		if authErr != nil {
+			return a.failAndStore(ctx, result, authErr)
+		}
+		normalized.Model = model
 	}
 
 	// 仅显式 scheduler_boost 走 legacy；空值/其它均按默认 direct_http。

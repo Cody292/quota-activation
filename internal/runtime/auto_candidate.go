@@ -53,10 +53,13 @@ func (s autoScanSnapshot) autoCandidates(file host.AuthFile, runtimeAuth autoRun
 	if disabled && !s.config.EnableBeforeActivation {
 		return nil
 	}
-	available := autoCandidateModels(file, document, runtimeAuth)
-	observedAt := s.now().UTC()
+	nowFn := s.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	observedAt := nowFn().UTC()
 	if provider == detector.ProviderAntigravity {
-		pairs := autoAntigravityModels(s.config, available)
+		pairs := autoAntigravityModels(s.config, nil)
 		out := make([]autoCandidate, 0, len(pairs))
 		for _, pair := range pairs {
 			payload, ok := autoCandidatePayloadWithGroup(file, document, runtimeAuth, provider, pair.Model, authID, s.store, observedAt, s.host, string(antigravityPairModelGroup(pair)))
@@ -74,6 +77,7 @@ func (s autoScanSnapshot) autoCandidates(file host.AuthFile, runtimeAuth autoRun
 		}
 		return out
 	}
+	available := autoCandidateModels(file, document, runtimeAuth)
 	model, ok := autoModel(s.config, provider, available)
 	if !ok {
 		return nil

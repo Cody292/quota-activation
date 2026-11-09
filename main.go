@@ -239,6 +239,18 @@ func (hostCallbackAdapter) SaveAuthFile(ctx context.Context, name string, data [
 	return callHost(ctx, "host.auth.save", map[string]any{"name": name, "json": json.RawMessage(data)}, &response)
 }
 
+func (hostCallbackAdapter) AuthModels(ctx context.Context, authIndex string) ([]host.HostAuthModels, error) {
+	var response host.HostAuthModelsResponse
+	if err := callHost(ctx, "host.auth.models", host.HostAuthModelsRequest{AuthIndex: authIndex}, &response); err != nil {
+		return nil, err
+	}
+	return response.Credentials, nil
+}
+
+func (a hostCallbackAdapter) GetAuthModels(ctx context.Context, authIndex string) ([]host.HostAuthModels, error) {
+	return a.AuthModels(ctx, authIndex)
+}
+
 func callHost(ctx context.Context, method string, payload any, target any) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -303,4 +315,8 @@ func copyHostResponse(response C.cliproxy_buffer) []byte {
 	return C.GoBytes(unsafe.Pointer(response.ptr), C.int(response.len))
 }
 
-var _ host.Client = hostCallbackAdapter{}
+var (
+	_ host.Client             = hostCallbackAdapter{}
+	_ host.AuthModelsClient   = hostCallbackAdapter{}
+	_ host.AuthModelsProvider = hostCallbackAdapter{}
+)
