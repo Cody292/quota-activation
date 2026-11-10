@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"quota-activation/internal/activator"
+	"quota-activation/internal/config"
 	"quota-activation/internal/state"
 )
 
@@ -33,9 +34,11 @@ type activationResponse struct {
 }
 
 type diagnosticConfig struct {
-	AutoActivate           bool   `json:"auto_activate"`
-	EnableBeforeActivation bool   `json:"enable_before_activation"`
-	ActivationModelCodex   string `json:"activation_model_codex"`
+	AutoActivate            bool                     `json:"auto_activate"`
+	EnableBeforeActivation  bool                     `json:"enable_before_activation"`
+	ActivationModelCodex    string                   `json:"activation_model_codex"`
+	OAuthModelAliases       config.OAuthModelAliases `json:"oauth_model_aliases"`
+	OAuthModelAliasesStatus string                   `json:"oauth_model_aliases_status"`
 }
 
 type errorResponse struct {

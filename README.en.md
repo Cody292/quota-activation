@@ -27,6 +27,8 @@ Quota Activation is a CLIProxyAPI (CPA) plugin for quota-reset activation. The p
 - Antigravity keeps its 7-day default long window, supports multi-group position-based pairing, and dynamically populates available models from capability hints.
 - Management pages support bilingual UI, execution history inspection, three-state manual activation feedback (success/failed/skipped), and debounce protection; diagnostics and state expose only redacted information.
 - Enhanced batch activation and UI ergonomics: models safely parse both object and raw string array formats; credentials are strictly filtered by the active provider; batch activation checks supported models for Antigravity credentials and automatically skips unsupported targets with accurate skip metrics.
+- Supports OAuth model alias resolution for **Antigravity** and **Codex**: configuration and activation requests accept alias names, which the plugin resolves back to upstream canonical models for group validation, quota probing, and direct activation (while matching only models or aliases actually registered on each credential); manual alias sync is available in the management page.
+- Strengthens credential isolation and quota payload security: both management lookups and automatic scans verify runtime credential identifiers, the management UI never borrows models from other credentials, Antigravity credentials return empty models and quota data when the host returns no registered models, file quota payloads are sanitized through a per-provider whitelist (stripping nested or sensitive fields), and Antigravity fallback quota states are built per model group to prevent cross-group cycle pollution.
 
 ## Workflow
 
@@ -36,12 +38,15 @@ Load plugin
   -> Register management routes and static resource page /status
   -> Manual: user selects credential/model and POSTs /activate
        - strictly filter credentials by active provider
+       - isolate model loading and whitelist-sanitized quota payloads per credential and provider (Antigravity uses only host-registered models for that credential, and builds fallback windows per model group)
+       - resolve Antigravity and Codex OAuth model aliases for group matching and quota probing
        - allow manual trigger to bypass current-cycle hard-skip limit
        - safely allow credentials without cycle records without polluting persistence
        - batch activation checks model support and automatically skips unsupported entries
   -> Automatic: when auto_activate=true, scan by scan_interval
-       - list/get_runtime credentials
-       - prefer real long-window quota data
+       - list/get_runtime credentials and verify runtime credential identifiers to prevent cross-credential bleed
+       - resolve OAuth model aliases for Antigravity and Codex back to upstream canonical models for authorization, quota probing, and direct activation (matching only registered models/aliases)
+       - prefer real long-window quota data after per-provider whitelist sanitization
        - Codex ignores 5-hour rolling short windows; synthesize a long window from the plan (paid 7 days, free/unknown 30 days) when absent
        - Antigravity keeps the 7-day default long window
        - skip cycles already marked success (5-hour short windows never hard-skip)
@@ -103,6 +108,8 @@ plugins:
       activation_transport: "direct_http"
       # fall back to legacy scheduler_boost only on transport/host failures; never on business failures
       scheduler_boost_fallback: true
+      # host OAuth model alias JSON mapping (usually written via manual management page sync; default empty)
+      oauth_model_aliases: ""
       activation_models:
         codex:
           models: "gpt-5.4-mini"
@@ -123,6 +130,7 @@ plugins:
 | `activation_prompt` | Activation prompt (`direct_http` body; `scheduler_boost` via `host.model.execute`). |
 | `activation_transport` | Transport: `direct_http` (**default**, via `host.http.do`) or `scheduler_boost` (legacy priority boost + `host.model.execute`). |
 | `scheduler_boost_fallback` | Only when `activation_transport=direct_http`. Default `true`. On **transport/host** failures, may fall back once to `scheduler_boost`. **Business failures / fake 2xx (no valid structure) never fall back** and must not write a success cycle. |
+| `oauth_model_aliases` | JSON mapping string for host OAuth model aliases. Used to resolve Antigravity and Codex aliases back to upstream models; default `""` (empty), rejecting empty names or same-provider name/alias collisions. Usually populated by clicking "Sync OAuth model aliases" on the management page, no manual editing needed. |
 | `activation_models.codex.models` | Codex model for automatic activation. |
 	| `activation_models.antigravity.models_group` | Antigravity automatic activation group (`gemini`, `claude_gpt`, `gemini_4_argon`). Supports 1-3 groups separated by `\|` and paired with `models` by position; one model per group; legacy single value compatible; arrays/commas not supported. |
 | `activation_models.antigravity.models` | Model name for Antigravity automatic activation. For multiple groups, separate with `\|` and pair with `models_group` by position; one model per group; legacy single value compatible; arrays/commas not supported. |
@@ -131,6 +139,8 @@ Notes:
 
 - Unit-suffixed Go durations such as `45m`, `2h`, and `90s` are still accepted.
 - Auto scan and manual activation share `Activator.Activate`. The `scan_interval` gate allows ~2s early ticks so timer jitter does not drop a round.
+- The `activation_models` settings (`codex.models` and `antigravity.models`) accept mapped aliases; the plugin resolves them back to upstream canonical models for group matching and quota probing. For Antigravity, `models_group` must still match the upstream canonical model's group. If an upstream model maps to multiple registered aliases on the same credential, specify the exact registered alias to avoid ambiguity.
+- Credential-provided `quota_payload` data is sanitized through a per-provider whitelist before quota evaluation or returning to the management UI, stripping unrelated nested and potentially sensitive fields. When real file quota data is absent, Antigravity builds fallback quota states independently per model group to prevent cross-group cycle pollution.
 - Management UI, diagnostics, and run history surface **Simplified Chinese** failure text (legacy English strings are mapped).
 
 ## Management Page and API
@@ -139,19 +149,27 @@ Notes:
 
 - `GET /v0/resource/plugins/quota-activation/status`
   Static HTML page for key verification and manual activation. Dynamic calls use management APIs.
+  - **Sync OAuth model aliases (user steps)**:
+    1. Open the management page and verify the CPA management key.
+    2. Click "Sync OAuth model aliases" to fetch current Antigravity and Codex alias mappings from the host and save them to `oauth_model_aliases`.
+    3. Wait for CPA to complete its configuration reload (hot-reload or host restart), then click "Refresh credentials" (or inspect the diagnostics endpoint) to load updated groups and activate using the new aliases.
+  - **Manual sync and reload behavior**: Alias synchronization runs only as a manual on-demand action rather than continuous background syncing, so click sync again whenever host OAuth aliases are added or changed. The success message confirms the aliases are saved to plugin configuration immediately; runtime behavior updates once CPA finishes reloading config.
+  - **Per-credential model isolation**: The management page loads models strictly per credential name and provider without borrowing lists from other credentials; if the host returns no registered models for an Antigravity credential, the UI displays no available model groups and keeps quota payload empty.
 
 ### Management API
 
-Requires the CPA management key:
+Plugin management routes (require the CPA management key):
 
 - `GET /v0/management/quota-activation/status`
 - `GET /v0/management/quota-activation/auth-files`
 - `POST /v0/management/quota-activation/activate`
-- `GET /v0/management/quota-activation/diagnostics`
+- `GET /v0/management/quota-activation/diagnostics` (returns the active runtime's redacted `oauth_model_aliases` and `oauth_model_aliases_status`)
 
-Model list uses the host global route:
+Host routes also called by the management page:
 
-- `GET /v0/management/auth-files/models?name=...`
+- `GET /v0/management/auth-files/models?name=...` (fetches available models per credential)
+- `GET /v0/management/oauth-model-alias` (reads current host Antigravity and Codex OAuth model aliases)
+- `PATCH /v0/management/plugins/quota-activation/config` (persists synced `oauth_model_aliases` to plugin config)
 
 ## License
 

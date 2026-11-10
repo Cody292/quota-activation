@@ -21,8 +21,13 @@ func autoAntigravityModels(cfg config.Config, availableModels []string) []config
 	}
 	out := make([]config.AntigravityModelPair, 0, len(pairs))
 	for _, pair := range pairs {
-		if !antigravityPairEligible(pair, availableModels) {
+		if !antigravityPairEligible(config.AntigravityModelPair{Group: pair.Group, Model: cfg.OAuthModelAliases.Resolve("antigravity", pair.Model)}, nil) {
 			continue
+		}
+		if len(availableModels) > 0 {
+			if _, ok, err := cfg.OAuthModelAliases.RegisteredModel(config.ModelRegistrationRequest{Provider: "antigravity", Model: pair.Model, Registered: availableModels}); err != nil || !ok {
+				continue
+			}
 		}
 		out = append(out, config.AntigravityModelPair{
 			Group: strings.TrimSpace(pair.Group),
@@ -41,8 +46,13 @@ func autoAntigravityModel(cfg config.Config, availableModels []string) (string, 
 		Group: strings.TrimSpace(cfg.ActivationModels.Antigravity.ModelsGroup),
 		Model: model,
 	}
-	if !antigravityPairEligible(pair, availableModels) {
+	if !antigravityPairEligible(config.AntigravityModelPair{Group: pair.Group, Model: cfg.OAuthModelAliases.Resolve("antigravity", pair.Model)}, nil) {
 		return "", false
+	}
+	if len(availableModels) > 0 {
+		if _, ok, err := cfg.OAuthModelAliases.RegisteredModel(config.ModelRegistrationRequest{Provider: "antigravity", Model: pair.Model, Registered: availableModels}); err != nil || !ok {
+			return "", false
+		}
 	}
 	return model, true
 }

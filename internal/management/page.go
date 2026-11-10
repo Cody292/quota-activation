@@ -125,7 +125,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      </div>
 	      <div id="appShell" hidden>
 	        <div class="header-bar">
-				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.2</span></h1>
+				<h1><span data-i18n="title">配额唤醒</span><span class="version-badge">v0.1.3</span></h1>
 	          <div class="search-container">
 	            <input id="credentialSearch" type="search" data-i18n-placeholder="searchPlaceholder" placeholder="搜索凭证..." oninput="renderAuthFiles()">
 	          </div>
@@ -143,6 +143,7 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	          </div>
 	        </div>
 	        <p id="managementToast" class="toast" role="status"></p>
+	        <div class="actions"><button id="syncAliasesButton" type="button" class="secondary" onclick="syncOAuthAliases(this)" data-i18n="syncAliases">同步 OAuth 模型别名</button></div>
 
 	        <div class="tabs">
 	          <button id="manualTabButton" class="tab-button active" onclick="switchTab('manual')" data-i18n="manualTab">手动唤醒</button>
@@ -283,6 +284,10 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        noAuthFiles: "未发现可唤醒凭证。",
 	        noModels: "该凭证没有启用的唤醒模型组。",
 	        refresh: "刷新凭证",
+	        syncAliases: "同步 OAuth 模型别名",
+	        syncingAliases: "同步中...",
+	        aliasSyncSaved: "别名已保存到插件配置，请确认配置重载成功。",
+	        aliasSyncFailed: "别名同步失败，请检查管理权限及配置后重试。",
 	        statusBusy: "执行中",
 	        statusSkipped: "已跳过",
 	        statusSuccess: "成功",
@@ -355,6 +360,10 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	        noAuthFiles: "No activatable credentials found.",
 	        noModels: "This credential has no enabled activation model group.",
 	        refresh: "Refresh credentials",
+	        syncAliases: "Sync OAuth model aliases",
+	        syncingAliases: "Syncing...",
+	        aliasSyncSaved: "Aliases saved to plugin configuration; check that reconfiguration succeeded.",
+	        aliasSyncFailed: "Alias sync failed. Check management permissions and configuration.",
 	        statusBusy: "Busy",
 	        statusSkipped: "Skipped",
 	        statusSuccess: "Success",
@@ -432,6 +441,25 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	    function restoreButton(state) { if (!state) { return; } state.control.disabled = false; state.control.textContent = state.labelKey ? textFor(state.labelKey) : state.text; }
 	    function activationErrorMessage(error) { const raw = String(error && error.message ? error.message : error); try { const payload = JSON.parse(raw); return payload.last_error || payload.message || raw || textFor("activationFailed"); } catch (_) { return raw || textFor("activationFailed"); } }
 	    async function managementFetch(path, options) { const key = managementKey(); if (!key) { return null; } const response = await fetch(path, { ...(options || {}), headers: { "Authorization": "Bearer " + key, "Content-Type": "application/json", ...((options && options.headers) || {}) } }); const text = await response.text(); if (!response.ok) { throw new Error(text || response.statusText); } return text ? JSON.parse(text) : {}; }
+	    async function syncOAuthAliases(button) {
+	      if (!button || button.disabled) { return; }
+	      const state = setButtonBusy(button, "syncingAliases");
+	      try {
+	        const result = await managementFetch("/v0/management/oauth-model-alias", { method: "GET" });
+	        if (!result || !Object.prototype.hasOwnProperty.call(result, "oauth-model-alias")) { throw new Error("invalid aliases"); }
+	        const source = result["oauth-model-alias"] === null ? {} : result["oauth-model-alias"];
+	        if (!source || typeof source !== "object" || Array.isArray(source)) { throw new Error("invalid aliases"); }
+	        const aliases = {};
+	        for (const provider of ["antigravity", "codex"]) {
+	          const entries = source[provider] === undefined ? [] : source[provider];
+	          if (!Array.isArray(entries) || entries.some((item) => !item || typeof item.name !== "string" || !item.name.trim() || typeof item.alias !== "string" || !item.alias.trim() || (item.fork !== undefined && typeof item.fork !== "boolean"))) { throw new Error("invalid aliases"); }
+	          aliases[provider] = entries.map((item) => ({ name: item.name, alias: item.alias, fork: item.fork === true }));
+	        }
+	        const saved = await managementFetch("/v0/management/plugins/quota-activation/config", { method: "PATCH", body: JSON.stringify({ oauth_model_aliases: JSON.stringify(aliases) }) });
+	        if (!saved || saved.status !== "ok") { throw new Error("alias sync not saved"); }
+	        message(textFor("aliasSyncSaved"));
+	      } catch (error) { message(shortError("aliasSyncFailed")); } finally { restoreButton(state); }
+	    }
 	    async function verifyManagementKey(button) { const buttonState = setButtonBusy(button, "verifyingKey"); try { await managementFetch(STATUS_PATH, { method: "GET" }); document.getElementById("loginGate").hidden = true; document.getElementById("appShell").hidden = false; await loadAuthFiles(); message(textFor("keyPassed")); } catch (error) { message(shortError("keyFailed")); } finally { restoreButton(buttonState); } }
 	    function setManualActionBusy(busy, labelKey) {
 	      const refreshBtn = document.getElementById("refreshCredentialsButton");
@@ -481,25 +509,30 @@ func (h *Handler) handlePage(w http.ResponseWriter) {
 	      }
 	    }
 	    async function loadCredentialModels() {
-	      const providerCache = {};
-	      const pendingByProvider = {};
+	      const nameCache = {};
+	      const pendingByName = {};
 	      for (const credential of authFiles) {
 	        if (!credential) { continue; }
-	        if (Array.isArray(credential.models) && credential.models.length > 0) { continue; }
-	        const provider = String(credential.provider || "").toLowerCase();
-	        const cacheKey = String(credential.auth_id || credential.id || credential.name || provider);
-	        if (!credential.name && !providerCache[cacheKey]) { credential.models = Array.isArray(credential.models) ? credential.models : []; continue; }
+	        if (Array.isArray(credential.models) && credential.models.length > 0) {
+	          credential.models = modelChoicesForCredential(credential, credential.models);
+	          continue;
+	        }
+	        const name = String(credential.name || "").trim();
+	        if (!name) {
+	          credential.models = Array.isArray(credential.models) ? modelChoicesForCredential(credential, credential.models) : [];
+	          continue;
+	        }
+	        const cacheKey = String(credential.provider || "").toLowerCase() + ":" + name;
 	        try {
-	          if (!Object.prototype.hasOwnProperty.call(providerCache, cacheKey)) {
-	            if (!pendingByProvider[cacheKey]) {
-	              const sampleName = credential.name || (authFiles.find((item) => item && item.name && String(item.provider || "").toLowerCase() === provider) || {}).name;
-	              pendingByProvider[cacheKey] = sampleName
-	                ? managementFetch(AUTH_FILE_MODELS_PATH + "?name=" + encodeURIComponent(sampleName), { method: "GET" }).then((result) => Array.isArray(result && result.models) ? result.models : []).catch(() => [])
-	                : Promise.resolve([]);
+	          if (!Object.prototype.hasOwnProperty.call(nameCache, cacheKey)) {
+	            if (!pendingByName[cacheKey]) {
+	              pendingByName[cacheKey] = managementFetch(AUTH_FILE_MODELS_PATH + "?name=" + encodeURIComponent(name), { method: "GET" })
+	                .then((result) => (Array.isArray(result && result.models) ? result.models : []))
+	                .catch(() => []);
 	            }
-	            providerCache[cacheKey] = await pendingByProvider[cacheKey];
+	            nameCache[cacheKey] = await pendingByName[cacheKey];
 	          }
-	          credential.models = modelChoicesForCredential(credential, providerCache[cacheKey] || []);
+	          credential.models = modelChoicesForCredential(credential, nameCache[cacheKey] || []);
 	        } catch (_) {
 	          credential.models = Array.isArray(credential.models) ? credential.models : [];
 	        }

@@ -38,6 +38,7 @@ type Config struct {
 	// 业务/严格成功判定失败禁止回退（不得伪装成功）。
 	SchedulerBoostFallback bool
 	ActivationModels       ActivationModels
+	OAuthModelAliases      OAuthModelAliases
 }
 
 // ActivationModels 定义不同 provider 唤醒请求必须显式配置的模型。
@@ -64,6 +65,7 @@ type rawConfig struct {
 	ActivationTransport      *string              `json:"activation_transport"`
 	SchedulerBoostFallback   *bool                `json:"scheduler_boost_fallback"`
 	ActivationModels         *rawActivationModels `json:"activation_models"`
+	OAuthModelAliases        *string              `json:"oauth_model_aliases"`
 }
 
 type rawActivationModels struct {
@@ -205,7 +207,14 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 		}
 		*field.target = parsed
 	}
-	models, err := raw.ActivationModels.parse(cfg.ActivationModels)
+	var err error
+	if raw.OAuthModelAliases != nil {
+		cfg.OAuthModelAliases, err = parseOAuthModelAliases(*raw.OAuthModelAliases)
+		if err != nil {
+			return Config{}, err
+		}
+	}
+	models, err := raw.ActivationModels.parse(cfg.ActivationModels, cfg.OAuthModelAliases)
 	if err != nil {
 		return Config{}, err
 	}
@@ -213,14 +222,14 @@ func (raw rawConfig) apply(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
-func (raw *rawActivationModels) parse(base ActivationModels) (ActivationModels, error) {
+func (raw *rawActivationModels) parse(base ActivationModels, aliases OAuthModelAliases) (ActivationModels, error) {
 	models := base
 	if raw != nil && raw.Codex != nil && raw.Codex.Models != nil {
 		models.Codex.Models = strings.TrimSpace(*raw.Codex.Models)
 	}
 	if raw != nil && raw.Antigravity != nil {
 		var err error
-		models.Antigravity, err = raw.Antigravity.parse(models.Antigravity)
+		models.Antigravity, err = raw.Antigravity.parse(models.Antigravity, aliases)
 		if err != nil {
 			return ActivationModels{}, err
 		}

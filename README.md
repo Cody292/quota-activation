@@ -32,6 +32,8 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
 - 批量激活与界面交互体验增强：前端模型选项兼容对象与字符串数组格式，凭证列表严格按提供商隔离筛选；批量唤醒时智能校验可用模型支持，自动跳过不支持的模型并统计为跳过，提升批量操作容错与稳定性。
 - Antigravity 手动与自动唤醒均按凭证核对宿主已注册的模型，只使用该凭证实际可用且已启用的模型；自动扫描会过滤未注册模型，避免无效唤醒请求。
 - 并发唤醒同一个已禁用凭证时会依次完成启用操作，避免凭证状态修改互相冲突；自动扫描记录按提供商汇总结果，并显示失败原因及次数，便于定位问题。
+- 支持 **Antigravity** 与 **Codex** 的 OAuth 模型别名解析：唤醒配置与凭证模型支持别名映射，插件自动将别名还原为对应上游真实模型以进行模型组校验、额度探测与直连唤醒（仍仅匹配凭证实际已注册的模型或别名）；管理页面提供手动同步别名功能。
+- 强化多凭证隔离与配额数据安全：管理端与自动扫描均会校验运行时凭证索引匹配，管理页面不再跨凭证借用模型列表，Antigravity 凭证在宿主未返回注册模型时置空可选模型与配额载荷；文件配额数据按提供商白名单清洗并剥离潜在敏感嵌套字段，Antigravity 缺省回退配额按模型组独立组装，杜绝跨组周期污染。
 
 ## 工作流程
 
@@ -41,12 +43,15 @@ CLIProxyAPI (CPA) 配额唤醒插件。插件 ID、动态库基础名与 CPA 配
   -> 注册 management 路由与静态资源页 /status
   -> 手动：用户选择凭证与模型后 POST /activate
        - 凭证严格按活动提供商隔离筛选
+       - 按单个凭证与提供商隔离加载模型及白名单清洗后的配额载荷（Antigravity 仅用宿主为该凭证注册的模型，回退周期按模型组独立组装）
+       - 支持解析 Antigravity 与 Codex 的 OAuth 模型别名以匹配模型组与探测额度
        - 手动触发强制放行（绕过周期内已有成功的硬跳过限制）
        - 无周期数据凭据安全放行唤醒（不污染周期状态存储）
        - 批量激活智能校验可用模型并自动跳过不支持项
   -> 自动：auto_activate=true 时按 scan_interval 扫描
-       - host.auth.list / get_runtime 取凭证
-       - 真实长窗口额度数据优先
+       - host.auth.list / get_runtime 取凭证并核对运行时凭证索引，防止跨凭证串用
+       - 支持 OAuth 模型别名解析（匹配已注册模型/别名，并将 Antigravity 与 Codex 别名还原为上游真实模型用于校验权限、探测额度与直连唤醒）
+       - 真实长窗口额度数据经提供商白名单清洗后优先使用
        - Codex 忽略 5 小时滚动短窗；无真实长窗时按套餐合成（付费 7 天，免费 / 未知 30 天）
         - Antigravity 保留 7 天默认长窗
         - Antigravity 候选按凭证已注册模型筛选，唤醒前确认目标模型可用
@@ -112,6 +117,8 @@ plugins:
       activation_transport: "direct_http"
       # direct_http 仅在传输/宿主类失败时回退 legacy scheduler_boost；业务失败不回退
       scheduler_boost_fallback: true
+      # 宿主 OAuth 模型别名 JSON 映射（通常由管理页面手动同步写入，默认空字符串）
+      oauth_model_aliases: ""
       activation_models:
         codex:
           models: "gpt-5.4-mini"
@@ -134,6 +141,7 @@ plugins:
 | `activation_prompt` | 唤醒提示词（`direct_http` 写入上游请求体；`scheduler_boost` 经 `host.model.execute` 发送）。 |
 | `activation_transport` | 唤醒传输方式：`direct_http`（**默认**，`host.http.do` 直连）或 `scheduler_boost`（legacy：临时提升 priority + `host.model.execute`）。 |
 | `scheduler_boost_fallback` | 仅当 `activation_transport=direct_http` 时生效；默认 `true`。遇**传输/宿主类**失败可回退一次 `scheduler_boost`；**业务失败 / 假 2xx（无有效结构）禁止回退**，也不得写入 success cycle。 |
+| `oauth_model_aliases` | 宿主 OAuth 模型别名的 JSON 映射字符串。用于将 Antigravity 与 Codex 的别名还原为上游真实模型；默认 `""`（空），同提供商内不允许空名称或模型名与别名冲突。通常由管理页面点击「同步 OAuth 模型别名」自动写入，无需手动维护。 |
 | `activation_models.codex.models` | Codex 自动唤醒模型名称。 |
 | `activation_models.antigravity.models_group` | Antigravity 自动唤醒模型组（`gemini`、`claude_gpt`、`gemini_4_argon`）。支持 1~3 个模型组并用 `\|` 分隔，与 `models` 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。 |
 | `activation_models.antigravity.models` | Antigravity 自动唤醒模型名称。多组时同样用 `\|` 分隔并与 `models_group` 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。 |
@@ -143,6 +151,8 @@ plugins:
 - 仍可写带单位的 Go duration（如 `45m`、`2h`、`90s`）。
 - 自动扫描与手动唤醒共用 `Activator.Activate` 内核；`scan_interval` 门闩允许约 2 秒微早触发，避免 timer 抖动静默丢轮。
 - Antigravity 选用 `gemini-3.8-flash-{low,medium,high}` 时，插件会自动识别对应思考档位并配置生成参数。
+- 字段 `activation_models`（`codex.models` 与 `antigravity.models`）支持填写已映射的别名，插件会自动还原为上游真实模型以匹配模型组与探测额度；其中 Antigravity 的 `models_group` 仍须对应上游真实模型所属分组。若同一上游模型在一个凭证上对应多个已注册别名，请直接填写目标已注册别名以免歧义。
+- 凭证文件自带的 `quota_payload` 在探测和下发前会按提供商白名单清洗，剥离无关嵌套与潜在敏感字段；缺失真实文件配额时，Antigravity 按模型组独立组装回退周期，避免跨组污染。
 - 管理端页面、诊断信息与执行历史的失败原因均为**纯中文**（针对上游 429 额度耗尽、404 模型未开放等具体场景提供精准语义反馈）。
 
 ## 管理页面与接口
@@ -151,19 +161,27 @@ plugins:
 
 - `GET /v0/resource/plugins/quota-activation/status`
   返回静态 HTML 页面，用于管理密钥验证、凭证选择与手动唤醒。页面内动态请求走 management API。
+  - **同步 OAuth 模型别名（操作步骤）**：
+    1. 打开管理页面并输入 CPA 管理密钥完成验证。
+    2. 点击「同步 OAuth 模型别名」按钮，页面会从宿主拉取 Antigravity 与 Codex 当前的别名列表并写入 `oauth_model_aliases` 配置。
+    3. 等待 CPA 宿主完成配置重载（热重载或重启宿主）后，点击「刷新凭证」（或查看诊断接口）即可按新别名加载模型分组与发起唤醒。
+  - **手动同步与重载说明**：别名同步为按需手动单次操作，插件不会在后台自动持续同步；当宿主中的 OAuth 模型别名新增或变更后，需再次点击同步。同步成功提示仅表示已即时写入插件配置，运行时生效仍以 CPA 宿主完成配置重载为准。
+  - **多凭证模型隔离**：管理页面按单个凭证名称与提供商独立加载可用模型，不再向其他凭证借用模型列表；若 Antigravity 凭证在宿主侧未返回已注册模型，界面将显示无可用模型组并留空配额载荷。
 
 ### 管理 API
 
-以下接口需要 CPA 管理密钥：
+以下插件管理接口需要 CPA 管理密钥：
 
 - `GET /v0/management/quota-activation/status`
 - `GET /v0/management/quota-activation/auth-files`
 - `POST /v0/management/quota-activation/activate`
-- `GET /v0/management/quota-activation/diagnostics`
+- `GET /v0/management/quota-activation/diagnostics`（返回当前运行态已应用且脱敏后的 `oauth_model_aliases` 与应用状态）
 
-模型列表使用宿主全局接口：
+管理页面同时调用以下 CPA 宿主接口：
 
-- `GET /v0/management/auth-files/models?name=...`
+- `GET /v0/management/auth-files/models?name=...`（查询单个凭证可用模型列表）
+- `GET /v0/management/oauth-model-alias`（读取宿主当前的 Antigravity 与 Codex OAuth 模型别名）
+- `PATCH /v0/management/plugins/quota-activation/config`（将同步得到的 `oauth_model_aliases` 写入插件配置）
 
 ## 许可证
 

@@ -14,6 +14,8 @@ func LocalizeUserMessage(raw string) string {
 	lower := strings.ToLower(msg)
 
 	switch {
+	case strings.Contains(lower, "oauth_model_aliases"):
+		return "模型别名映射存在歧义，请明确指定已注册的别名"
 	case strings.Contains(lower, "usage_limit") || strings.Contains(lower, "usage limit"):
 		return "Codex唤醒失败：用量额度已耗尽"
 	case strings.Contains(lower, "activator: busy") || strings.EqualFold(msg, ErrBusy.Error()):

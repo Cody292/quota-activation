@@ -11,7 +11,7 @@ import (
 	"quota-activation/internal/state"
 )
 
-// TrueFromFile 读取 runtime/file 上的真实 quota_payload，不做合成。
+// TrueFromFile 读取 runtime/file 上的真实 quota_payload，经白名单清洗后返回，不做合成。
 func TrueFromFile(file host.AuthFile) (json.RawMessage, bool) {
 	var document struct {
 		QuotaPayload      json.RawMessage `json:"quota_payload"`
@@ -19,16 +19,19 @@ func TrueFromFile(file host.AuthFile) (json.RawMessage, bool) {
 	}
 	if err := json.Unmarshal(file.Data, &document); err == nil {
 		for _, raw := range []json.RawMessage{document.QuotaPayload, document.QuotaPayloadUpper} {
-			if len(raw) > 0 {
-				return append([]byte(nil), raw...), true
+			if sanitized, ok := Sanitize(raw); ok {
+				return sanitized, true
 			}
 		}
 	}
 	for _, values := range []map[string]any{file.Metadata, file.Attributes} {
 		for _, key := range []string{"quota_payload", "quotaPayload"} {
 			encoded, ok := encode(values[key])
-			if ok {
-				return encoded, true
+			if !ok {
+				continue
+			}
+			if sanitized, ok := Sanitize(encoded); ok {
+				return sanitized, true
 			}
 		}
 	}

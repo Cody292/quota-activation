@@ -66,6 +66,12 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 		return activator.Request{}, false, err
 	}
 	model := strings.TrimSpace(r.Model)
+	quotaModel := h.config.OAuthModelAliases.Resolve(string(provider), model)
+	if provider == detector.ProviderAntigravity && modelGroup != detector.ModelGroupNone {
+		if inferred, ok := detector.InferModelGroup(quotaModel); ok && inferred != modelGroup {
+			return activator.Request{}, false, fmt.Errorf("model_group does not match model")
+		}
+	}
 	observedAt := h.now().UTC()
 	previous := activator.PreviousStateFromStoreForModelGroup(h.store, r.AuthID, provider, modelGroup)
 	if prevKey := strings.TrimSpace(r.PreviousCycleKey); prevKey != "" && previous.CycleKey == "" {
@@ -74,7 +80,7 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 	input := detector.ProbeInput{
 		AuthID:     r.AuthID,
 		Provider:   provider,
-		Model:      model,
+		Model:      quotaModel,
 		ObservedAt: observedAt,
 		Payload:    r.QuotaPayload,
 	}
@@ -86,7 +92,7 @@ func (h *Handler) toActivatorRequest(r activationRequest) (activator.Request, bo
 		}
 	}
 	if err != nil && provider == detector.ProviderAntigravity && errors.Is(err, detector.ErrUnknownQuota) {
-		modelGroupFromModel, ok := detector.InferModelGroup(model)
+		modelGroupFromModel, ok := detector.InferModelGroup(quotaModel)
 		if ok && modelGroup != detector.ModelGroupNone && modelGroupFromModel == modelGroup && strings.TrimSpace(r.Model) != "" {
 			decision = detector.Decision{
 				Activate: true,

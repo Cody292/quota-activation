@@ -3,18 +3,54 @@ package management
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
 	"quota-activation/internal/planclaim"
 	"quota-activation/internal/quotapayload"
+	"quota-activation/internal/state"
 )
 
 func (h *Handler) quotaPayload(file host.AuthFile, provider string, availableModels []string, authID string) any {
-	now := h.now().UTC()
-	if payload, ok := quotapayload.TrueFromFile(file); ok && !codexFiveHourOnly(provider, authID, payload, now) {
-		return json.RawMessage(payload)
+	now := time.Now().UTC()
+	if h != nil && h.now != nil {
+		now = h.now().UTC()
+	}
+	if payload, ok := quotapayload.TrueFromFile(file); ok {
+		if sanitized, ok := quotapayload.SanitizeForProvider(detector.Provider(provider), payload); ok && !codexFiveHourOnly(provider, authID, sanitized, now) {
+			return json.RawMessage(sanitized)
+		}
+	}
+	if detector.Provider(provider) == detector.ProviderAntigravity {
+		assembled := map[string]any{"models": map[string]any{}}
+		models := assembled["models"].(map[string]any)
+		var store *state.Store
+		if h != nil {
+			store = h.store
+		}
+		hasGroupHistory := h.hasActiveNamedGroupHistory(authID, provider, now)
+		for _, model := range availableModels {
+			name, seconds, resetAt, ok := quotapayload.SyntheticWindow(detector.ProviderAntigravity, now)
+			if group, grouped := detector.InferModelGroup(model); grouped {
+				if record, found := store.UsableLatestSuccessForModelGroup(authID, provider, string(group)); found {
+					if n, s, r, valid := quotapayload.WindowFromSuccess(record, now); valid {
+						name, seconds, resetAt, ok = n, s, r, true
+					}
+				} else if hasGroupHistory {
+					continue
+				}
+			}
+			if ok {
+				if payload, valid := quotapayload.MarshalAntigravity([]string{model}, name, seconds, resetAt); valid {
+					for key, value := range payload["models"].(map[string]any) {
+						models[key] = value
+					}
+				}
+			}
+		}
+		return assembled
 	}
 	if record, ok := h.store.UsableLatestSuccess(authID, provider); ok {
 		if name, limitSeconds, resetAt, ok := quotapayload.WindowFromSuccess(record, now); ok {
@@ -47,6 +83,29 @@ func (h *Handler) quotaPayload(file host.AuthFile, provider string, availableMod
 	default:
 		return map[string]any{}
 	}
+}
+
+func (h *Handler) hasActiveNamedGroupHistory(authID string, provider string, now time.Time) bool {
+	if h == nil || h.store == nil {
+		return false
+	}
+	wantAuthID := state.Redact(strings.TrimSpace(authID))
+	wantProvider := state.Redact(strings.TrimSpace(provider))
+	if wantAuthID == "" || wantProvider == "" {
+		return false
+	}
+	for _, record := range h.store.SnapshotUsableSuccess() {
+		if record.AuthID != wantAuthID || record.Provider != wantProvider {
+			continue
+		}
+		if state.ModelGroupOf(record) == "" {
+			continue
+		}
+		if _, _, _, valid := quotapayload.WindowFromSuccess(record, now); valid {
+			return true
+		}
+	}
+	return false
 }
 
 // codexFiveHourOnly 将 Codex 仅 5h 的真源视为缺失（与 parseCodex 忽略 5h 一致）。

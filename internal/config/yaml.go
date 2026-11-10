@@ -145,6 +145,18 @@ func yamlScalarForKey(key string, value string) any {
 	switch key {
 	case "models_group", "models":
 		return yamlText(value)
+	case "oauth_model_aliases":
+		text := strings.TrimSpace(value)
+		if strings.HasPrefix(text, "\"") {
+			decoded, err := strconv.Unquote(text)
+			if err == nil {
+				return decoded
+			}
+		}
+		if len(text) >= 2 && text[0] == '\'' && text[len(text)-1] == '\'' {
+			return strings.ReplaceAll(text[1:len(text)-1], "''", "'")
+		}
+		return text
 	case "max_concurrency", "priority":
 		return yamlScalar(value)
 	case "auto_activate", "enable_before_activation", "scheduler_boost_fallback", "enabled", "enable_gemini", "enable_claude_gpt":

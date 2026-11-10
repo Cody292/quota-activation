@@ -62,7 +62,8 @@ func (s autoScanSnapshot) autoCandidates(file host.AuthFile, runtimeAuth autoRun
 		pairs := autoAntigravityModels(s.config, nil)
 		out := make([]autoCandidate, 0, len(pairs))
 		for _, pair := range pairs {
-			payload, ok := autoCandidatePayloadWithGroup(file, document, runtimeAuth, provider, pair.Model, authID, s.store, observedAt, s.host, string(antigravityPairModelGroup(pair)))
+			quotaModel := s.config.OAuthModelAliases.Resolve(string(provider), pair.Model)
+			payload, ok := autoCandidatePayloadWithGroup(file, document, runtimeAuth, provider, quotaModel, authID, s.store, observedAt, s.host, string(antigravityPairModelGroup(pair)))
 			if !ok {
 				continue
 			}
@@ -159,8 +160,12 @@ func autoModel(cfg config.Config, provider detector.Provider, availableModels []
 			return "", false
 		}
 		// CPA host.auth.list/get_runtime 通常不返回 models；有列表时做存在性校验，无列表时直接使用配置模型。
-		if len(availableModels) > 0 && !hasAutoModel(availableModels, model) {
-			return "", false
+		if len(availableModels) > 0 {
+			registered, ok, err := cfg.OAuthModelAliases.RegisteredModel(config.ModelRegistrationRequest{Provider: string(provider), Model: model, Registered: availableModels})
+			if err != nil || !ok {
+				return "", false
+			}
+			return registered, true
 		}
 		return model, true
 	case detector.ProviderAntigravity:

@@ -33,7 +33,7 @@ type legacyAntigravityModels struct {
 	enableClaudeGPT bool
 }
 
-func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) (AntigravityActivationModels, error) {
+func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels, aliases OAuthModelAliases) (AntigravityActivationModels, error) {
 	models := base
 	if raw.ModelsGroup != nil || raw.Models != nil {
 		if raw.ModelsGroup != nil {
@@ -42,7 +42,7 @@ func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) (An
 		if raw.Models != nil {
 			models.Models = strings.TrimSpace(*raw.Models)
 		}
-		return parseAntigravityModelPairs(models)
+		return parseAntigravityModelPairs(models, aliases)
 	}
 
 	legacy := legacyAntigravityModels{}
@@ -75,10 +75,10 @@ func (raw rawAntigravityModelsGroup) parse(base AntigravityActivationModels) (An
 		models.ModelsGroup = "claude_gpt"
 		models.Models = legacy.claudeGPT
 	}
-	return parseAntigravityModelPairs(models)
+	return parseAntigravityModelPairs(models, aliases)
 }
 
-func parseAntigravityModelPairs(models AntigravityActivationModels) (AntigravityActivationModels, error) {
+func parseAntigravityModelPairs(models AntigravityActivationModels, aliases OAuthModelAliases) (AntigravityActivationModels, error) {
 	groupText := strings.TrimSpace(models.ModelsGroup)
 	modelText := strings.TrimSpace(models.Models)
 	if groupText == "" && modelText == "" {
@@ -123,7 +123,7 @@ func parseAntigravityModelPairs(models AntigravityActivationModels) (Antigravity
 		}
 		seen[group] = struct{}{}
 		modelName := modelNames[i]
-		if err := validateAntigravityModelMatchesGroup(group, modelName); err != nil {
+		if err := validateAntigravityModelMatchesGroup(group, aliases.Resolve("antigravity", modelName)); err != nil {
 			return AntigravityActivationModels{}, err
 		}
 		pairs = append(pairs, AntigravityModelPair{Group: group, Model: modelName})

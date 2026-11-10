@@ -93,9 +93,11 @@ func (h *Handler) handleDiagnostics(w http.ResponseWriter) {
 	response.Routes = Register().Routes
 	response.Resources = Register().Resources
 	response.Config = &diagnosticConfig{
-		AutoActivate:           h.config.AutoActivate,
-		EnableBeforeActivation: h.config.EnableBeforeActivation,
-		ActivationModelCodex:   state.Redact(h.config.ActivationModels.Codex.Models),
+		AutoActivate:            h.config.AutoActivate,
+		EnableBeforeActivation:  h.config.EnableBeforeActivation,
+		ActivationModelCodex:    state.Redact(h.config.ActivationModels.Codex.Models),
+		OAuthModelAliases:       h.config.OAuthModelAliases.Redacted(state.Redact),
+		OAuthModelAliasesStatus: "applied",
 	}
 	if response.AuthID != "" {
 		response.StateRecords = []state.Record{{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"quota-activation/internal/config"
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
 )
@@ -17,6 +18,7 @@ func filterAntigravityCandidates(
 	client host.Client,
 	file host.AuthFile,
 	candidates []autoCandidate,
+	mappings ...config.OAuthModelAliases,
 ) ([]autoCandidate, error) {
 	authIndex := strings.TrimSpace(file.AuthIndex)
 	fileID := strings.TrimSpace(firstNonBlankAuto(file.ID, file.Name))
@@ -65,22 +67,18 @@ func filterAntigravityCandidates(
 		return nil, fmt.Errorf("credential provider mismatch: got %q, expected antigravity", matched.Provider)
 	}
 
-	allowedModels := make(map[string]struct{}, len(matched.Models))
-	for _, model := range matched.Models {
-		allowedModels[model] = struct{}{}
-		trimmed := strings.TrimSpace(model)
-		if trimmed != "" {
-			allowedModels[trimmed] = struct{}{}
-		}
+	var aliases config.OAuthModelAliases
+	if len(mappings) > 0 {
+		aliases = mappings[0]
 	}
 
 	filtered := make([]autoCandidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if _, ok := allowedModels[candidate.model]; ok {
-			filtered = append(filtered, candidate)
-			continue
+		_, ok, err := aliases.RegisteredModel(config.ModelRegistrationRequest{Provider: string(candidate.provider), Model: candidate.model, Registered: matched.Models})
+		if err != nil {
+			return nil, err
 		}
-		if _, ok := allowedModels[strings.TrimSpace(candidate.model)]; ok {
+		if ok {
 			filtered = append(filtered, candidate)
 		}
 	}

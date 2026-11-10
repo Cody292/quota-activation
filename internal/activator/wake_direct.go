@@ -64,6 +64,7 @@ func (a *Activator) wakeDirect(ctx context.Context, request Request, result Resu
 	if model == "" {
 		return a.failDirect(result, "直连唤醒失败：缺少模型名称"), nil
 	}
+	model = a.config.OAuthModelAliases.Resolve(string(request.Provider), model)
 	prompt := strings.TrimSpace(request.Prompt)
 	if prompt == "" {
 		prompt = strings.TrimSpace(a.config.ActivationPrompt)

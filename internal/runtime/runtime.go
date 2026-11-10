@@ -185,7 +185,7 @@ func registrationResult() RegisterResult {
 		SchemaVersion: 1,
 		Metadata: Metadata{
 			Name:             "quota-activation",
-			Version:          "0.1.2",
+			Version:          "0.1.3",
 			Author:           "Cody292",
 			GitHubRepository: "https://github.com/Cody292/quota-activation",
 			Description:      "Quota reset activation management API and scheduler helper for Codex and Antigravity.",
@@ -198,6 +198,7 @@ func registrationResult() RegisterResult {
 func configFields() []ConfigField {
 	defaults := config.Default()
 	return []ConfigField{
+		{Name: "oauth_model_aliases", Type: "string", Description: localizedDescription("宿主 OAuth 模型别名的 JSON 映射。", "JSON mapping of host OAuth model aliases."), DefaultValue: ""},
 		{Name: "activation_models.codex.models", Type: "string", Description: localizedDescription("Codex 自动唤醒使用的模型名称。", "Model name used for Codex automatic activation."), DefaultValue: defaults.ActivationModels.Codex.Models},
 		{Name: "activation_models.antigravity.models_group", Type: "string", Description: localizedDescription("Antigravity 自动唤醒模型组（gemini、claude_gpt、gemini_4_argon）。支持 1~3 个模型组并用 | 分隔，与 models 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。", "Model group for Antigravity automatic activation (gemini, claude_gpt, gemini_4_argon). Supports 1-3 groups separated by | and paired with models by position; one model per group; legacy single value compatible; arrays/commas not supported."), DefaultValue: defaults.ActivationModels.Antigravity.ModelsGroup},
 		{Name: "activation_models.antigravity.models", Type: "string", Description: localizedDescription("Antigravity 自动唤醒使用的模型名称。多组时用 | 分隔并与 models_group 按位置配对；每个组只能一个模型；旧单值仍兼容；不支持数组/逗号。", "Model name used for Antigravity automatic activation. For multiple groups, separate with | and pair with models_group by position; one model per group; legacy single value compatible; arrays/commas not supported."), DefaultValue: defaults.ActivationModels.Antigravity.Models},

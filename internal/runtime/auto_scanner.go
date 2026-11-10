@@ -142,7 +142,7 @@ func (r *Runtime) scanAutoCandidates(ctx context.Context) {
 				}
 			}
 			if len(enabledCandidates) > 0 {
-				filtered, err := filterAntigravityCandidates(ctx, snapshot.host, file, enabledCandidates)
+				filtered, err := filterAntigravityCandidates(ctx, snapshot.host, file, enabledCandidates, snapshot.config.OAuthModelAliases)
 				if err := ctx.Err(); err != nil {
 					r.snapshotScanSummary(acc.toInput())
 					return
@@ -356,6 +356,9 @@ func (s autoScanSnapshot) runtimeAuthFile(ctx context.Context, file host.AuthFil
 	if err != nil {
 		return autoRuntimeAuthFile{}
 	}
+	if index := strings.TrimSpace(runtimeFile.AuthIndex); index != "" && index != authIndex {
+		return autoRuntimeAuthFile{}
+	}
 	return autoRuntimeAuthFile{file: runtimeFile, ok: true}
 }
 
@@ -393,7 +396,7 @@ func (s autoScanSnapshot) activateCandidateDetail(ctx context.Context, candidate
 	observedAt := s.now().UTC()
 	previous := previousStateFromStoreForModelGroup(s.store, candidate.authID, candidate.provider, candidate.modelGroup)
 	decision, err := detector.EvaluateWithPrevious(detector.ProbeInput{
-		AuthID: candidate.authID, Provider: candidate.provider, Model: candidate.model,
+		AuthID: candidate.authID, Provider: candidate.provider, Model: s.config.OAuthModelAliases.Resolve(string(candidate.provider), candidate.model),
 		ObservedAt: observedAt, Payload: candidate.payload,
 	}, previous)
 	if err != nil {

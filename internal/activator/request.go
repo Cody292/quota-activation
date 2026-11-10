@@ -15,7 +15,9 @@ func (a *Activator) normalizeRequest(request Request) (Request, error) {
 	if normalized.Prompt == "" {
 		normalized.Prompt = strings.TrimSpace(a.config.ActivationPrompt)
 	}
-	missing := missingRequestFields(normalized)
+	validation := normalized
+	validation.Model = a.config.OAuthModelAliases.Resolve(string(normalized.Provider), normalized.Model)
+	missing := missingRequestFields(validation)
 	if len(missing) > 0 {
 		return normalized, fmt.Errorf("missing %s: %w", strings.Join(missing, ","), ErrInvalidRequest)
 	}
@@ -54,16 +56,18 @@ func (a *Activator) initialResult(request Request) Result {
 	if observedAt.IsZero() {
 		observedAt = a.now().UTC()
 	}
+	validation := request
+	validation.Model = a.config.OAuthModelAliases.Resolve(string(request.Provider), request.Model)
 	return Result{
-		AuthID:       request.AuthID,
-		Provider:     string(request.Provider),
-		Window:       string(request.Window),
-		CycleKey:     request.CycleKey.String(),
-		Status:       StatusFailed,
-		ObservedAt:   observedAt.UTC(),
-		ResetAt:      request.ResetAt.UTC(),
-		Remaining:    request.Remaining,
-		HasRemaining: request.HasRemaining,
-		noCycleManualAntigravity: noCycleManualAntigravity(request),
+		AuthID:                   request.AuthID,
+		Provider:                 string(request.Provider),
+		Window:                   string(request.Window),
+		CycleKey:                 request.CycleKey.String(),
+		Status:                   StatusFailed,
+		ObservedAt:               observedAt.UTC(),
+		ResetAt:                  request.ResetAt.UTC(),
+		Remaining:                request.Remaining,
+		HasRemaining:             request.HasRemaining,
+		noCycleManualAntigravity: noCycleManualAntigravity(validation),
 	}
 }

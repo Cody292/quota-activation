@@ -78,7 +78,7 @@ func (h *Handler) modelChoices(provider string, availableModels []string) []mode
 	case detector.ProviderAntigravity:
 		choices := make([]modelChoice, 0, len(availableModels))
 		for _, model := range availableModels {
-			group := antigravityModelGroup(model)
+			group := antigravityModelGroup(h.config.OAuthModelAliases.Resolve(provider, model))
 			if group == detector.ModelGroupNone {
 				continue
 			}

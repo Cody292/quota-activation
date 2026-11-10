@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"quota-activation/internal/config"
 	"quota-activation/internal/detector"
 	"quota-activation/internal/host"
 	"quota-activation/internal/state"
@@ -106,7 +107,7 @@ func (a *Activator) authorizeAntigravityModel(ctx context.Context, request Reque
 
 		var enabledModels []string
 		for _, m := range registeredModels {
-			if !isModelDisabled(m) {
+			if !isModelDisabled(a.config.OAuthModelAliases.Resolve(string(request.Provider), m)) {
 				enabledModels = append(enabledModels, m)
 			}
 		}
@@ -116,26 +117,28 @@ func (a *Activator) authorizeAntigravityModel(ctx context.Context, request Reque
 
 		requestedModel := strings.TrimSpace(request.Model)
 		if requestedModel != "" {
-			if isModelDisabled(requestedModel) {
+			if isModelDisabled(a.config.OAuthModelAliases.Resolve(string(request.Provider), requestedModel)) {
 				return "", fmt.Errorf("available model is required for auth %s: model %s is disabled", authID, requestedModel)
 			}
 			if request.ModelGroup != detector.ModelGroupNone {
-				group, ok := detector.InferModelGroup(requestedModel)
+				group, ok := detector.InferModelGroup(a.config.OAuthModelAliases.Resolve(string(request.Provider), requestedModel))
 				if !ok || group != request.ModelGroup {
 					return "", fmt.Errorf("available model is required for auth %s: model %s group mismatch", authID, requestedModel)
 				}
 			}
-			for _, m := range enabledModels {
-				if m == requestedModel {
-					return m, nil
-				}
+			model, found, err := a.config.OAuthModelAliases.RegisteredModel(config.ModelRegistrationRequest{Provider: string(request.Provider), Model: requestedModel, Registered: enabledModels})
+			if err != nil {
+				return "", err
+			}
+			if found {
+				return model, nil
 			}
 			return "", fmt.Errorf("available model is required for auth %s: model %s not authorized", authID, requestedModel)
 		}
 
 		for _, m := range enabledModels {
 			if request.ModelGroup != detector.ModelGroupNone {
-				group, ok := detector.InferModelGroup(m)
+				group, ok := detector.InferModelGroup(a.config.OAuthModelAliases.Resolve(string(request.Provider), m))
 				if !ok || group != request.ModelGroup {
 					continue
 				}

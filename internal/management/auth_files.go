@@ -68,11 +68,52 @@ func (h *Handler) handleAuthFiles(w http.ResponseWriter, request *http.Request) 
 	modelCache := map[string][]modelChoice{}
 	for _, file := range resolved {
 		choice, ok := h.authFileChoice(file, modelCache)
-		if ok {
-			choices = append(choices, choice)
+		if !ok {
+			continue
 		}
+		if choice.Provider == string(detector.ProviderAntigravity) {
+			models := uniqueModels(h.antigravityRegisteredModels(request.Context(), file))
+			choice.Models = h.modelChoices(choice.Provider, models)
+			quotaModels := make([]string, 0, len(models))
+			for _, model := range models {
+				quotaModels = append(quotaModels, h.config.OAuthModelAliases.Resolve(choice.Provider, model))
+			}
+			if len(quotaModels) == 0 {
+				choice.QuotaPayload = map[string]any{"models": map[string]any{}}
+			} else {
+				choice.QuotaPayload = h.quotaPayload(file, choice.Provider, quotaModels, choice.AuthID)
+			}
+		}
+		choices = append(choices, choice)
 	}
 	writeJSON(w, http.StatusOK, authFilesResponse{Files: choices})
+}
+
+func (h *Handler) antigravityRegisteredModels(ctx context.Context, file host.AuthFile) []string {
+	authIndex := strings.TrimSpace(file.AuthIndex)
+	fileID := firstNonBlank(file.ID, file.Name)
+	if authIndex == "" && fileID == "" {
+		return nil
+	}
+	registered, err := host.GetAuthModels(ctx, h.host, authIndex)
+	if err != nil {
+		return nil
+	}
+	var matched *host.HostAuthModels
+	for i := range registered {
+		credIndex := strings.TrimSpace(registered[i].AuthIndex)
+		credID := strings.TrimSpace(registered[i].ID)
+		if (authIndex != "" && credIndex == authIndex) || (authIndex == "" && credID == fileID) {
+			if matched != nil {
+				return nil
+			}
+			matched = &registered[i]
+		}
+	}
+	if matched == nil || !strings.EqualFold(strings.TrimSpace(matched.Provider), string(detector.ProviderAntigravity)) {
+		return nil
+	}
+	return matched.Models
 }
 
 // resolveAuthFiles 有限并发拉取 runtime，降低凭证很多时 auth-files 接口串行等待。
@@ -98,8 +139,8 @@ func (h *Handler) resolveAuthFiles(ctx context.Context, files []host.AuthFile) [
 			defer wg.Done()
 			for item := range jobs {
 				runtimeFile := item.file
-				if item.file.AuthIndex != "" {
-					if runtime, err := h.host.GetRuntimeAuthFile(ctx, item.file.AuthIndex); err == nil {
+				if authIndex := strings.TrimSpace(item.file.AuthIndex); authIndex != "" {
+					if runtime, err := h.host.GetRuntimeAuthFile(ctx, authIndex); err == nil && (strings.TrimSpace(runtime.AuthIndex) == "" || strings.TrimSpace(runtime.AuthIndex) == authIndex) {
 						runtimeFile = mergeRuntimeAuthFile(item.file, runtime)
 					}
 				}
@@ -135,7 +176,11 @@ func (h *Handler) authFileChoice(file host.AuthFile, modelCache map[string][]mod
 			modelCache[cacheKey] = models
 		}
 	}
-	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: models, QuotaPayload: h.quotaPayload(file, provider, availableModels, authID)}, true
+	quotaModels := make([]string, 0, len(availableModels))
+	for _, model := range availableModels {
+		quotaModels = append(quotaModels, h.config.OAuthModelAliases.Resolve(provider, model))
+	}
+	return authFileChoice{AuthID: authID, Name: firstNonBlank(runtimeFile.Name, file.Name, document.Name), Label: label, Provider: provider, Disabled: runtimeFile.Disabled || file.Disabled || document.Disabled, Models: models, QuotaPayload: h.quotaPayload(file, provider, quotaModels, authID)}, true
 }
 
 func mergeRuntimeAuthFile(base host.AuthFile, runtime host.AuthFile) host.AuthFile {
